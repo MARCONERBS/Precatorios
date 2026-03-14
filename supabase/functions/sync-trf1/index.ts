@@ -6,7 +6,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Known URL patterns for TRF1 precatórios by year
 const TRF1_URLS: Record<number, string> = {
   2025: "https://www.trf1.jus.br/trf1/conteudo/precat%C3%B3rios%20federias%20alimentares%20or%C3%A7amento%202025.htm",
   2026: "https://www.trf1.jus.br/trf1/conteudo/rela%C3%A7%C3%A3o%20precat%C3%B3rio%20or%C3%A7amento%202026%20publica%C3%A7%C3%A3o%20rela%C3%A7%C3%A3o%20v_2.htm",
@@ -17,6 +16,12 @@ function parseHtmlTable(html: string): Array<{ numero: string; valor: number }> 
   const rowRegex = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
   const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
   const rows = html.match(rowRegex) || [];
+
+  console.log(`Found ${rows.length} <tr> elements`);
+  // Log first 3 rows for debugging
+  for (let i = 0; i < Math.min(5, rows.length); i++) {
+    console.log(`Row ${i}: ${rows[i].substring(0, 300)}`);
+  }
 
   for (const row of rows) {
     const cells: string[] = [];
@@ -66,7 +71,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { ano } = await req.json().catch(() => ({ ano: new Date().getFullYear() }));
+    const { ano, debug } = await req.json().catch(() => ({ ano: new Date().getFullYear(), debug: false }));
     const year = ano || new Date().getFullYear();
     console.log(`Syncing precatórios for year ${year}`);
 
@@ -75,12 +80,7 @@ Deno.serve(async (req) => {
     if (!fileUrl) {
       const mainPageRes = await fetch(
         "https://www.trf1.jus.br/trf1/processual/rpv-e-precatorios",
-        {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/html",
-          },
-        }
+        { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html" } }
       );
       const mainHtml = await mainPageRes.text();
       const linkRegex = new RegExp(`href="([^"]*)"[^>]*>[^<]*Precat[^<]*${year}`, "i");
@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
 
     if (!fileUrl) {
       return new Response(
-        JSON.stringify({ success: false, error: `Arquivo de precatórios não encontrado para ${year}` }),
+        JSON.stringify({ success: false, error: `Arquivo não encontrado para ${year}` }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -101,15 +101,16 @@ Deno.serve(async (req) => {
     console.log(`Fetching: ${fileUrl}`);
     const fileRes = await fetch(fileUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
         "Referer": "https://www.trf1.jus.br/trf1/processual/rpv-e-precatorios",
       },
     });
 
     if (!fileRes.ok) {
       return new Response(
-        JSON.stringify({ success: false, error: `Erro HTTP ${fileRes.status} ao baixar arquivo do TRF1` }),
+        JSON.stringify({ success: false, error: `Erro HTTP ${fileRes.status}` }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -117,12 +118,22 @@ Deno.serve(async (req) => {
     const html = await fileRes.text();
     console.log(`Downloaded: ${html.length} bytes`);
 
+    // Debug: log first 2000 chars to understand structure
+    if (debug || html.length > 0) {
+      console.log(`HTML preview (first 2000 chars): ${html.substring(0, 2000)}`);
+    }
+
     const precatorios = parseHtmlTable(html);
     console.log(`Parsed ${precatorios.length} precatórios`);
 
     if (precatorios.length === 0) {
       return new Response(
-        JSON.stringify({ success: false, error: "Nenhum precatório encontrado no arquivo" }),
+        JSON.stringify({
+          success: false,
+          error: "Nenhum precatório encontrado no arquivo",
+          html_preview: html.substring(0, 3000),
+          html_size: html.length,
+        }),
         { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -131,11 +142,8 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-
     const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
+    const { data: { user }, error: authError } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
     if (authError || !user) {
       return new Response(
         JSON.stringify({ success: false, error: "Token inválido" }),
@@ -143,51 +151,30 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get existing numeros to avoid duplicates
     const { data: existing } = await supabase
-      .from("precatorios")
-      .select("numero")
-      .eq("user_id", user.id)
-      .eq("ano", year);
-
+      .from("precatorios").select("numero").eq("user_id", user.id).eq("ano", year);
     const existingSet = new Set((existing || []).map((e: any) => e.numero));
 
     const toInsert = precatorios
       .filter((p) => !existingSet.has(p.numero))
       .map((p) => ({
-        user_id: user.id,
-        numero: p.numero,
-        valor: p.valor,
-        ano: year,
-        status: "pendente",
-        kanban_coluna: "novo",
+        user_id: user.id, numero: p.numero, valor: p.valor,
+        ano: year, status: "pendente", kanban_coluna: "novo",
       }));
 
     const skipped = precatorios.length - toInsert.length;
     let inserted = 0;
-
-    // Batch insert in chunks of 500
     const BATCH_SIZE = 500;
     for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
       const batch = toInsert.slice(i, i + BATCH_SIZE);
       const { error: insertError } = await supabase.from("precatorios").insert(batch);
-      if (insertError) {
-        console.error(`Batch insert error at ${i}:`, insertError.message);
-      } else {
-        inserted += batch.length;
-      }
+      if (insertError) console.error(`Batch error at ${i}:`, insertError.message);
+      else inserted += batch.length;
     }
 
     console.log(`Done: ${inserted} inserted, ${skipped} skipped`);
-
     return new Response(
-      JSON.stringify({
-        success: true,
-        total_encontrados: precatorios.length,
-        inseridos: inserted,
-        ja_existentes: skipped,
-        ano: year,
-      }),
+      JSON.stringify({ success: true, total_encontrados: precatorios.length, inseridos: inserted, ja_existentes: skipped, ano: year }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
