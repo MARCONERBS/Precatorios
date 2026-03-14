@@ -47,6 +47,10 @@ function parseHtmlTable(html: string): Array<{ numero: string; valor: number }> 
     let numero = precDigits;
     if (numero.length === 20) {
       numero = `${numero.slice(0, 7)}-${numero.slice(7, 9)}.${numero.slice(9, 13)}.${numero.slice(13, 14)}.${numero.slice(14, 16)}.${numero.slice(16, 20)}`;
+    } else if (numero.length === 19) {
+      // Some TRF1 files use 19 digits (missing leading zero)
+      numero = `0${numero}`;
+      numero = `${numero.slice(0, 7)}-${numero.slice(7, 9)}.${numero.slice(9, 13)}.${numero.slice(13, 14)}.${numero.slice(14, 16)}.${numero.slice(16, 20)}`;
     }
     results.push({ numero, valor });
   }
