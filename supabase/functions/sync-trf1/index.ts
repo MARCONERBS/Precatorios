@@ -2,8 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 const TRF1_URLS: Record<number, string> = {
@@ -13,58 +12,60 @@ const TRF1_URLS: Record<number, string> = {
 
 function parseHtmlTable(html: string): Array<{ numero: string; valor: number }> {
   const results: Array<{ numero: string; valor: number }> = [];
-  // Match <tr> tags - handle both quoted and unquoted attributes
-  const rowRegex = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
-  const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-  const rows = html.match(rowRegex) || [];
+  
+  // Use a more robust approach: find all <tr>...</tr> blocks
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  const cellRegex = /<td[^>]*?>([\s\S]*?)<\/td>/gi;
+  
+  let rowMatch;
+  let totalRows = 0;
+  let dataRows = 0;
+  let logged = 0;
 
-  console.log(`Found ${rows.length} <tr> elements`);
-
-  let dataRowsFound = 0;
-  let sampleLogged = 0;
-
-  for (const row of rows) {
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    totalRows++;
+    const rowContent = rowMatch[1];
+    
+    // Skip rows with colspan (header/merged rows)
+    if (/colspan/i.test(rowContent)) continue;
+    
     const cells: string[] = [];
     let cellMatch;
-    cellRegex.lastIndex = 0;
-    while ((cellMatch = cellRegex.exec(row)) !== null) {
+    const localCellRegex = /<td[^>]*?>([\s\S]*?)<\/td>/gi;
+    
+    while ((cellMatch = localCellRegex.exec(rowContent)) !== null) {
       const text = cellMatch[1]
         .replace(/<[^>]*>/g, "")
         .replace(/&nbsp;/g, " ")
+        .replace(/&#?\w+;/g, " ")
         .replace(/\s+/g, " ")
         .trim();
       cells.push(text);
     }
 
     if (cells.length < 3) continue;
-
-    // Log first few data-like rows for debugging
-    if (sampleLogged < 5 && cells.length >= 3) {
-      console.log(`Cells [${cells.length}]: ${JSON.stringify(cells.slice(0, 5))}`);
-      sampleLogged++;
+    
+    // Log first data rows for debugging
+    if (logged < 10) {
+      console.log(`DataRow[${logged}] cells=${cells.length}: ${JSON.stringify(cells.slice(0, 5))}`);
+      logged++;
     }
 
     const ordem = cells[0];
     const precatorio = cells[1];
     const valorStr = cells[2];
 
-    // Accept numeric ordem (1, 2, 3...) 
     if (!ordem || isNaN(Number(ordem))) continue;
-    // Precatorio number should be mostly digits, at least 10 chars when stripped
+    
     const precDigits = precatorio.replace(/\D/g, "");
     if (precDigits.length < 10) continue;
 
-    // Parse valor: handles "123.399,62" and "R$ 123.399,62" and " 123.399,62 "
-    const cleanValor = valorStr
-      .replace(/[R$\s]/g, "")
-      .replace(/\./g, "")
-      .replace(",", ".");
+    const cleanValor = valorStr.replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".");
     const valor = parseFloat(cleanValor);
     if (isNaN(valor) || valor <= 0) continue;
 
-    dataRowsFound++;
+    dataRows++;
 
-    // Format precatório number with mask
     let numero = precDigits;
     if (numero.length === 20) {
       numero = `${numero.slice(0, 7)}-${numero.slice(7, 9)}.${numero.slice(9, 13)}.${numero.slice(13, 14)}.${numero.slice(14, 16)}.${numero.slice(16, 20)}`;
@@ -73,7 +74,7 @@ function parseHtmlTable(html: string): Array<{ numero: string; valor: number }> 
     results.push({ numero, valor });
   }
 
-  console.log(`Data rows found: ${dataRowsFound}`);
+  console.log(`Total rows: ${totalRows}, data rows with valid data: ${dataRows}`);
   return results;
 }
 
@@ -147,7 +148,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Auth
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
