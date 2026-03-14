@@ -60,7 +60,8 @@ function parseHtmlTable(html: string): Array<{ numero: string; valor: number }> 
     const precDigits = precatorio.replace(/\D/g, "");
     if (precDigits.length < 10) continue;
 
-    const cleanValor = valorStr.replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".");
+    // Remove all non-numeric chars except dot and comma (handles encoding artifacts like � from windows-1252)
+    const cleanValor = valorStr.replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".");
     const valor = parseFloat(cleanValor);
     if (isNaN(valor) || valor <= 0) continue;
 
