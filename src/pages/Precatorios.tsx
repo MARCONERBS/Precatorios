@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RefreshCw, Download } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 
 type StatusType = "pendente" | "buscando" | "encontrado" | "erro" | "contato_pronto";
 
@@ -21,6 +23,9 @@ function formatCurrency(value: number) {
 
 export default function Precatorios() {
   const currentYear = new Date().getFullYear();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [syncing, setSyncing] = useState(false);
 
   const { data: precatorios, isLoading } = useQuery({
     queryKey: ["precatorios"],
@@ -34,8 +39,50 @@ export default function Precatorios() {
     },
   });
 
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-trf1", {
+        body: { ano: currentYear },
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast({
+          title: "Sincronização concluída",
+          description: `${data.inseridos} precatórios importados, ${data.ja_existentes} já existentes. Total encontrado: ${data.total_encontrados}.`,
+        });
+        queryClient.invalidateQueries({ queryKey: ["precatorios"] });
+        queryClient.invalidateQueries({ queryKey: ["precatorios-stats"] });
+        queryClient.invalidateQueries({ queryKey: ["precatorios-kanban"] });
+      } else {
+        toast({
+          title: "Erro na sincronização",
+          description: data?.error || "Erro desconhecido",
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Erro na sincronização",
+        description: err.message || "Falha ao conectar com o TRF1",
+        variant: "destructive",
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
+      {/* Progress bar */}
+      {syncing && (
+        <div className="fixed top-0 left-0 right-0 z-50 h-0.5 bg-primary/20">
+          <div className="h-full bg-primary animate-pulse-subtle" style={{ width: "100%" }} />
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Precatórios</h1>
@@ -46,9 +93,14 @@ export default function Precatorios() {
             <Download className="h-3.5 w-3.5" strokeWidth={1.5} />
             Exportar
           </Button>
-          <Button size="sm" className="gap-2">
-            <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Sincronizar {currentYear}
+          <Button
+            size="sm"
+            className="gap-2"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} strokeWidth={1.5} />
+            {syncing ? "Sincronizando..." : `Sincronizar ${currentYear}`}
           </Button>
         </div>
       </div>
@@ -106,6 +158,12 @@ export default function Precatorios() {
           </div>
         )}
       </div>
+
+      {precatorios && precatorios.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {precatorios.length} precatórios encontrados
+        </p>
+      )}
     </div>
   );
 }
