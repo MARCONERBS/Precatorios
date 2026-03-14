@@ -12,28 +12,17 @@ const TRF1_URLS: Record<number, string> = {
 
 function parseHtmlTable(html: string): Array<{ numero: string; valor: number }> {
   const results: Array<{ numero: string; valor: number }> = [];
-  
-  // Use a more robust approach: find all <tr>...</tr> blocks
   const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  const cellRegex = /<td[^>]*?>([\s\S]*?)<\/td>/gi;
-  
-  let rowMatch;
-  let totalRows = 0;
-  let dataRows = 0;
-  let logged = 0;
 
+  let rowMatch;
   while ((rowMatch = rowRegex.exec(html)) !== null) {
-    totalRows++;
     const rowContent = rowMatch[1];
-    
-    // Skip rows with colspan (header/merged rows)
     if (/colspan/i.test(rowContent)) continue;
-    
+
     const cells: string[] = [];
     let cellMatch;
-    const localCellRegex = /<td[^>]*?>([\s\S]*?)<\/td>/gi;
-    
-    while ((cellMatch = localCellRegex.exec(rowContent)) !== null) {
+    const cellRegex = /<td[^>]*?>([\s\S]*?)<\/td>/gi;
+    while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
       const text = cellMatch[1]
         .replace(/<[^>]*>/g, "")
         .replace(/&nbsp;/g, " ")
@@ -44,38 +33,23 @@ function parseHtmlTable(html: string): Array<{ numero: string; valor: number }> 
     }
 
     if (cells.length < 3) continue;
-    
-    // Log first data rows for debugging
-    if (logged < 10) {
-      console.log(`DataRow[${logged}] cells=${cells.length}: ${JSON.stringify(cells.slice(0, 5))}`);
-      logged++;
-    }
-
     const ordem = cells[0];
     const precatorio = cells[1];
     const valorStr = cells[2];
-
     if (!ordem || isNaN(Number(ordem))) continue;
-    
     const precDigits = precatorio.replace(/\D/g, "");
     if (precDigits.length < 10) continue;
 
-    // Remove all non-numeric chars except dot and comma (handles encoding artifacts like � from windows-1252)
     const cleanValor = valorStr.replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".");
     const valor = parseFloat(cleanValor);
     if (isNaN(valor) || valor <= 0) continue;
-
-    dataRows++;
 
     let numero = precDigits;
     if (numero.length === 20) {
       numero = `${numero.slice(0, 7)}-${numero.slice(7, 9)}.${numero.slice(9, 13)}.${numero.slice(13, 14)}.${numero.slice(14, 16)}.${numero.slice(16, 20)}`;
     }
-
     results.push({ numero, valor });
   }
-
-  console.log(`Total rows: ${totalRows}, data rows with valid data: ${dataRows}`);
   return results;
 }
 
@@ -144,7 +118,7 @@ Deno.serve(async (req) => {
 
     if (precatorios.length === 0) {
       return new Response(
-        JSON.stringify({ success: false, error: "Nenhum precatório encontrado no arquivo", html_size: html.length }),
+        JSON.stringify({ success: false, error: "Nenhum precatório encontrado no arquivo" }),
         { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
