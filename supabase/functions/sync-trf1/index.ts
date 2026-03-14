@@ -13,15 +13,15 @@ const TRF1_URLS: Record<number, string> = {
 
 function parseHtmlTable(html: string): Array<{ numero: string; valor: number }> {
   const results: Array<{ numero: string; valor: number }> = [];
+  // Match <tr> tags - handle both quoted and unquoted attributes
   const rowRegex = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
   const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
   const rows = html.match(rowRegex) || [];
 
   console.log(`Found ${rows.length} <tr> elements`);
-  // Log first 3 rows for debugging
-  for (let i = 0; i < Math.min(5, rows.length); i++) {
-    console.log(`Row ${i}: ${rows[i].substring(0, 300)}`);
-  }
+
+  let dataRowsFound = 0;
+  let sampleLogged = 0;
 
   for (const row of rows) {
     const cells: string[] = [];
@@ -37,23 +37,43 @@ function parseHtmlTable(html: string): Array<{ numero: string; valor: number }> 
     }
 
     if (cells.length < 3) continue;
+
+    // Log first few data-like rows for debugging
+    if (sampleLogged < 5 && cells.length >= 3) {
+      console.log(`Cells [${cells.length}]: ${JSON.stringify(cells.slice(0, 5))}`);
+      sampleLogged++;
+    }
+
     const ordem = cells[0];
     const precatorio = cells[1];
     const valorStr = cells[2];
+
+    // Accept numeric ordem (1, 2, 3...) 
     if (!ordem || isNaN(Number(ordem))) continue;
-    if (!precatorio || precatorio.length < 10) continue;
+    // Precatorio number should be mostly digits, at least 10 chars when stripped
+    const precDigits = precatorio.replace(/\D/g, "");
+    if (precDigits.length < 10) continue;
 
-    const cleanValor = valorStr.replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".");
+    // Parse valor: handles "123.399,62" and "R$ 123.399,62" and " 123.399,62 "
+    const cleanValor = valorStr
+      .replace(/[R$\s]/g, "")
+      .replace(/\./g, "")
+      .replace(",", ".");
     const valor = parseFloat(cleanValor);
-    if (isNaN(valor)) continue;
+    if (isNaN(valor) || valor <= 0) continue;
 
-    let numero = precatorio.replace(/\D/g, "");
+    dataRowsFound++;
+
+    // Format precatório number with mask
+    let numero = precDigits;
     if (numero.length === 20) {
       numero = `${numero.slice(0, 7)}-${numero.slice(7, 9)}.${numero.slice(9, 13)}.${numero.slice(13, 14)}.${numero.slice(14, 16)}.${numero.slice(16, 20)}`;
     }
 
     results.push({ numero, valor });
   }
+
+  console.log(`Data rows found: ${dataRowsFound}`);
   return results;
 }
 
@@ -71,16 +91,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { ano, debug } = await req.json().catch(() => ({ ano: new Date().getFullYear(), debug: false }));
+    const { ano } = await req.json().catch(() => ({ ano: new Date().getFullYear() }));
     const year = ano || new Date().getFullYear();
     console.log(`Syncing precatórios for year ${year}`);
 
     let fileUrl = TRF1_URLS[year];
-
     if (!fileUrl) {
       const mainPageRes = await fetch(
         "https://www.trf1.jus.br/trf1/processual/rpv-e-precatorios",
-        { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "text/html" } }
+        { headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" } }
       );
       const mainHtml = await mainPageRes.text();
       const linkRegex = new RegExp(`href="([^"]*)"[^>]*>[^<]*Precat[^<]*${year}`, "i");
@@ -102,8 +121,8 @@ Deno.serve(async (req) => {
     const fileRes = await fetch(fileUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "pt-BR,pt;q=0.9",
         "Referer": "https://www.trf1.jus.br/trf1/processual/rpv-e-precatorios",
       },
     });
@@ -118,22 +137,12 @@ Deno.serve(async (req) => {
     const html = await fileRes.text();
     console.log(`Downloaded: ${html.length} bytes`);
 
-    // Debug: log first 2000 chars to understand structure
-    if (debug || html.length > 0) {
-      console.log(`HTML preview (first 2000 chars): ${html.substring(0, 2000)}`);
-    }
-
     const precatorios = parseHtmlTable(html);
     console.log(`Parsed ${precatorios.length} precatórios`);
 
     if (precatorios.length === 0) {
       return new Response(
-        JSON.stringify({
-          success: false,
-          error: "Nenhum precatório encontrado no arquivo",
-          html_preview: html.substring(0, 3000),
-          html_size: html.length,
-        }),
+        JSON.stringify({ success: false, error: "Nenhum precatório encontrado no arquivo", html_size: html.length }),
         { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -157,10 +166,7 @@ Deno.serve(async (req) => {
 
     const toInsert = precatorios
       .filter((p) => !existingSet.has(p.numero))
-      .map((p) => ({
-        user_id: user.id, numero: p.numero, valor: p.valor,
-        ano: year, status: "pendente", kanban_coluna: "novo",
-      }));
+      .map((p) => ({ user_id: user.id, numero: p.numero, valor: p.valor, ano: year, status: "pendente", kanban_coluna: "novo" }));
 
     const skipped = precatorios.length - toInsert.length;
     let inserted = 0;
