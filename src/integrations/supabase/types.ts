@@ -14,7 +14,128 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      api_configurations: {
+        Row: {
+          alertaki_senha: string | null
+          alertaki_usuario: string | null
+          created_at: string
+          escavador_api_key: string | null
+          escavador_endpoint: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alertaki_senha?: string | null
+          alertaki_usuario?: string | null
+          created_at?: string
+          escavador_api_key?: string | null
+          escavador_endpoint?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alertaki_senha?: string | null
+          alertaki_usuario?: string | null
+          created_at?: string
+          escavador_api_key?: string | null
+          escavador_endpoint?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          channel: string
+          content: string
+          created_at: string
+          id: string
+          precatorio_id: string
+          sender: string
+          user_id: string
+        }
+        Insert: {
+          channel?: string
+          content: string
+          created_at?: string
+          id?: string
+          precatorio_id: string
+          sender: string
+          user_id: string
+        }
+        Update: {
+          channel?: string
+          content?: string
+          created_at?: string
+          id?: string
+          precatorio_id?: string
+          sender?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_precatorio_id_fkey"
+            columns: ["precatorio_id"]
+            isOneToOne: false
+            referencedRelation: "precatorios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      precatorios: {
+        Row: {
+          ano: number
+          cpf: string | null
+          created_at: string
+          emails: string[] | null
+          erro_mensagem: string | null
+          id: string
+          kanban_coluna: string
+          nome_titular: string | null
+          numero: string
+          status: string
+          telefones: string[] | null
+          updated_at: string
+          user_id: string
+          valor: number
+        }
+        Insert: {
+          ano?: number
+          cpf?: string | null
+          created_at?: string
+          emails?: string[] | null
+          erro_mensagem?: string | null
+          id?: string
+          kanban_coluna?: string
+          nome_titular?: string | null
+          numero: string
+          status?: string
+          telefones?: string[] | null
+          updated_at?: string
+          user_id: string
+          valor?: number
+        }
+        Update: {
+          ano?: number
+          cpf?: string | null
+          created_at?: string
+          emails?: string[] | null
+          erro_mensagem?: string | null
+          id?: string
+          kanban_coluna?: string
+          nome_titular?: string | null
+          numero?: string
+          status?: string
+          telefones?: string[] | null
+          updated_at?: string
+          user_id?: string
+          valor?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
