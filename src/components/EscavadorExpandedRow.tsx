@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Search, Loader2, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface EscavadorProps {
   item: {
@@ -16,11 +17,10 @@ interface EscavadorProps {
 
 export function EscavadorCell({ item, isExpanded, onToggle }: EscavadorProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
-  const [localDados, setLocalDados] = useState<any>(null);
 
-  const cachedDados = item.escavador_dados as any;
-  const dados = localDados || cachedDados;
+  const dados = item.escavador_dados as any;
   const hasData = dados && dados.encontrado !== false;
 
   const handleConsultar = async () => {
@@ -38,11 +38,13 @@ export function EscavadorCell({ item, isExpanded, onToggle }: EscavadorProps) {
       if (error) throw error;
 
       if (data?.success && data?.dados) {
-        setLocalDados(data.dados);
         await supabase.from("precatorios").update({ escavador_dados: data.dados }).eq("id", item.id);
+        // Invalidate query to refresh data from DB
+        await queryClient.invalidateQueries({ queryKey: ["precatorios"] });
         onToggle(item.id);
       } else if (data?.encontrado === false) {
-        setLocalDados({ encontrado: false });
+        await supabase.from("precatorios").update({ escavador_dados: { encontrado: false } }).eq("id", item.id);
+        await queryClient.invalidateQueries({ queryKey: ["precatorios"] });
         toast({ title: "Nenhum resultado", description: "Nenhum dado encontrado no Escavador." });
         onToggle(item.id);
       } else {
