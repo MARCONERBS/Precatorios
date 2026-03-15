@@ -6,12 +6,30 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function cleanDdgUrl(rawUrl: string): string | null {
+  try {
+    // Extract real URL from DuckDuckGo redirect
+    const uddgMatch = rawUrl.match(/uddg=([^&]+)/);
+    if (uddgMatch) {
+      let decoded = decodeURIComponent(uddgMatch[1]);
+      // If it's a DDG ad redirect, try to find the real URL inside
+      if (decoded.includes("duckduckgo.com/y.js")) return null; // Ad
+      return decoded;
+    }
+    if (rawUrl.startsWith("http")) return rawUrl;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function extractDuckDuckGoResults(html: string) {
   const data: {
     encontrado: boolean;
     resultados: Array<{ titulo: string; link: string; snippet: string }>;
     partes: string[];
     tribunal: string | null;
+    orgao_julgador: string | null;
     classe: string | null;
     resumo: string | null;
   } = {
@@ -19,65 +37,79 @@ function extractDuckDuckGoResults(html: string) {
     resultados: [],
     partes: [],
     tribunal: null,
+    orgao_julgador: null,
     classe: null,
     resumo: null,
   };
 
-  // DuckDuckGo HTML lite results pattern
-  // Try multiple patterns for DuckDuckGo result extraction
-  
-  // Pattern 1: result__a links with result__snippet
+  // Extract DuckDuckGo HTML lite results
   const linkRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
   const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
-  
-  const links: Array<{titulo: string; link: string}> = [];
+
+  const links: Array<{ titulo: string; link: string }> = [];
   let linkMatch;
   while ((linkMatch = linkRegex.exec(html)) !== null) {
-    links.push({
-      link: linkMatch[1],
-      titulo: linkMatch[2].replace(/<[^>]+>/g, "").trim(),
-    });
+    const cleanUrl = cleanDdgUrl(linkMatch[1]);
+    if (cleanUrl) {
+      links.push({
+        link: cleanUrl,
+        titulo: linkMatch[2].replace(/<[^>]+>/g, "").trim(),
+      });
+    }
   }
-  
+
   const snippets: string[] = [];
   let snippetMatch;
   while ((snippetMatch = snippetRegex.exec(html)) !== null) {
     snippets.push(snippetMatch[1].replace(/<[^>]+>/g, "").trim());
   }
 
-  for (let i = 0; i < links.length; i++) {
+  // Match links with snippets, filter out ads
+  let snippetIdx = 0;
+  for (const link of links) {
+    const snippet = snippets[snippetIdx] || "";
+    snippetIdx++;
+    
+    // Skip irrelevant results
+    if (link.link.includes("zoom.com") || link.link.includes("shopee") || 
+        link.link.includes("mercadolivre") || link.link.includes("amazon")) continue;
+
     data.resultados.push({
-      titulo: links[i].titulo,
-      link: links[i].link,
-      snippet: snippets[i] || "",
+      titulo: link.titulo,
+      link: link.link,
+      snippet,
     });
   }
 
-  // Pattern 2: fallback - extract any links with titles
+  // If no results from class-based extraction, try fallback
   if (data.resultados.length === 0) {
-    const genericRegex = /<a[^>]*href="(https?:\/\/(?!duckduckgo)[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const genericRegex = /<a[^>]*href="([^"]*(?:jusbrasil|escavador|trf|cnj)[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
     let gMatch;
     const seen = new Set<string>();
     while ((gMatch = genericRegex.exec(html)) !== null) {
-      const link = gMatch[1];
+      const cleanUrl = cleanDdgUrl(gMatch[1]) || gMatch[1];
       const titulo = gMatch[2].replace(/<[^>]+>/g, "").trim();
-      if (titulo.length > 10 && !seen.has(link) && 
-          (link.includes("jusbrasil") || link.includes("escavador") || link.includes("trf") || link.includes("cnj"))) {
-        seen.add(link);
-        data.resultados.push({ titulo, link, snippet: "" });
+      if (titulo.length > 5 && cleanUrl && !seen.has(cleanUrl)) {
+        seen.add(cleanUrl);
+        data.resultados.push({ titulo, link: cleanUrl, snippet: "" });
       }
     }
   }
 
-  if (data.resultados.length > 0) {
-    data.encontrado = true;
-  }
+  if (data.resultados.length > 0) data.encontrado = true;
 
-  // Extract info from snippets
+  // Extract structured info from all text
   const allText = data.resultados.map((r) => r.snippet + " " + r.titulo).join(" ");
 
-  // Parties
-  const parteRegex = /(?:Autor|Réu|Requerente|Requerido|Exequente|Executado|Impetrante|Impetrado|Apelante|Apelado)[:\s]+([^.;,\n]{3,80})/gi;
+  // Extract parties from snippets (common patterns in Escavador/JusBrasil results)
+  const entreMatch = allText.match(/entre\s+(.+?)\s+(?:e\s+(?:outros\s+e\s+)?)?(.+?)(?:\s+no\s+|\s+em\s+|\.\s|$)/i);
+  if (entreMatch) {
+    data.partes.push(entreMatch[1].trim());
+    if (entreMatch[2]) data.partes.push(entreMatch[2].trim());
+  }
+
+  // More party patterns
+  const parteRegex = /(?:Autor|Réu|Requerente|Requerido|Exequente|Executado|Impetrante|Impetrado|Apelante|Apelado|Recorrente|Recorrido)[:\s]+([^.;,\n]{3,80})/gi;
   let parteMatch;
   while ((parteMatch = parteRegex.exec(allText)) !== null) {
     const parte = parteMatch[0].trim();
@@ -85,16 +117,20 @@ function extractDuckDuckGoResults(html: string) {
   }
 
   // Tribunal
-  const tribunalMatch = allText.match(/(?:TRF|TJ|TST|STJ|STF)\s*(?:\d+[ªa]?\s*(?:Região)?)?/i);
+  const tribunalMatch = allText.match(/(?:TRF\s*\d+|TJ\w{2}|TST|STJ|STF)/i);
   if (tribunalMatch) data.tribunal = tribunalMatch[0].trim();
 
+  // Órgão julgador (e.g., "Juizo Federal da 7a Vara - Ba")
+  const orgaoMatch = allText.match(/(?:Ju[ií]zo\s+Federal\s+da?\s+\d+[ªa]?\s+Vara[^,\n.]*)/i);
+  if (orgaoMatch) data.orgao_julgador = orgaoMatch[0].trim();
+
   // Classe
-  const classeMatch = allText.match(/(?:Precatório|Execução\s+\w+|Ação\s+\w+|Mandado\s+de\s+Segurança)/i);
+  const classeMatch = allText.match(/(?:Precatório|Execução\s+\w+|Ação\s+\w+|Mandado\s+de\s+Segurança|Recurso\s+\w+)/i);
   if (classeMatch) data.classe = classeMatch[0].trim();
 
-  // Summary
+  // Summary from relevant snippets only
   const relevantSnippets = data.resultados
-    .filter((r) => r.snippet.length > 30)
+    .filter((r) => r.snippet.length > 30 && !r.snippet.includes("menores preços"))
     .slice(0, 3)
     .map((r) => r.snippet);
   if (relevantSnippets.length > 0) {
@@ -121,8 +157,7 @@ Deno.serve(async (req) => {
 
     console.log("Buscando no DuckDuckGo:", numero);
 
-    // Use DuckDuckGo HTML lite (no JS needed, no captcha)
-    const query = encodeURIComponent(`"${numero}" processo precatório`);
+    const query = encodeURIComponent(`"${numero}" processo`);
     const ddgUrl = `https://html.duckduckgo.com/html/?q=${query}`;
 
     const response = await fetch(ddgUrl, {
@@ -136,10 +171,7 @@ Deno.serve(async (req) => {
     if (!response.ok) {
       console.error("DuckDuckGo returned status:", response.status);
       return new Response(
-        JSON.stringify({
-          success: false,
-          error: `Busca retornou status ${response.status}`,
-        }),
+        JSON.stringify({ success: false, error: `Busca retornou status ${response.status}` }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
