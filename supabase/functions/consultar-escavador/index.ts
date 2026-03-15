@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     }
 
     // Search Escavador for the process number
-    const searchQuery = `site:escavador.com ${numero}`;
+    const searchQuery = `escavador processo ${numero}`;
     console.log('Searching Escavador via Firecrawl:', searchQuery);
 
     const searchResponse = await fetch('https://api.firecrawl.dev/v1/search', {
