@@ -191,30 +191,41 @@ function parseEscavadorMarkdown(markdown: string, links: string[], numero: strin
     }
   }
 
-  // Build summary - extract meaningful content, skip navigation markup
-  const meaningfulLines = markdown.split('\n')
-    .filter(l => {
-      const trimmed = l.trim();
-      return trimmed.length > 15 
-        && !trimmed.startsWith('[') 
-        && !trimmed.startsWith('Logo')
-        && !trimmed.includes('Fechar menu')
-        && !trimmed.includes('Abrir menu')
-        && !trimmed.includes('Entrar')
-        && !trimmed.includes('Cadastrar')
-        && !trimmed.includes('Relatórios jurídicos')
-        && !trimmed.includes('Diários Oficiais');
-    });
-  
-  const summaryText = meaningfulLines.slice(0, 8).join('\n');
-  if (summaryText) {
-    dados.resumo = summaryText
-      .substring(0, 600)
+  // Build summary from the "partes envolvidas" context or clean text
+  const contextMatch = markdown.match(/Tem como partes envolvidas(.+?)(?:\.\s*$|\n\n)/ms);
+  if (contextMatch) {
+    dados.resumo = ('Partes envolvidas' + contextMatch[1])
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/\*\*/g, '')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Convert markdown links to text
-      .replace(/\n{3,}/g, '\n\n')
       .trim();
-    if (summaryText.length > 600) dados.resumo += '…';
+  } else {
+    // Filter out navigation/UI text
+    const skipPatterns = [
+      /Fechar menu|Abrir menu|Entrar|Cadastrar/i,
+      /Relatórios|Diários Oficiais|Jurisprudência|Legislaç/i,
+      /Acompanhe processos|Integre dados|Simplifique o complexo/i,
+      /funcionalidades exclusivas|plataforma pronta/i,
+      /^\[/,
+      /^Logo/,
+      /escavador\.com/i,
+      /andamento da ação/i,
+    ];
+    
+    const meaningfulLines = markdown.split('\n')
+      .filter(l => {
+        const trimmed = l.trim();
+        if (trimmed.length < 20) return false;
+        return !skipPatterns.some(p => p.test(trimmed));
+      });
+    
+    const summaryText = meaningfulLines.slice(0, 5).join('\n');
+    if (summaryText) {
+      dados.resumo = summaryText
+        .substring(0, 400)
+        .replace(/\*\*/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .trim();
+    }
   }
 
   return dados;
