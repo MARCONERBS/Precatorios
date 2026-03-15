@@ -309,7 +309,9 @@ function EscavadorTableRow({
   const [localError, setLocalError] = useState(error);
 
   const handleConsultar = async () => {
-    if (localDados || cachedDados) {
+    const existingDados = localDados || cachedDados;
+    // Allow re-fetch if previous result had no results
+    if (existingDados && existingDados.encontrado !== false) {
       onToggle(item.id);
       return;
     }
