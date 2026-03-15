@@ -146,11 +146,13 @@ function parseEscavadorMarkdown(markdown: string, links: string[], numero: strin
   }
 
   // Extract tribunal
-  const tribunalMatch = markdown.match(/(?:TRF\s*\d+[ªa]?\s*Região|TRF\d|Tribunal\s+Regional\s+Federal[^\n]*|STF|STJ|TST|TJ[A-Z]{2})/i);
+  const tribunalMatch = markdown.match(/Tribunal\s+Regional\s+Federal\s+da\s+\d+[ªa]?\s*Região/i) 
+    || markdown.match(/(?:TRF\s*\d+[ªa]?\s*Região|TRF\d|STF|STJ|TST|TJ[A-Z]{2})/i);
   if (tribunalMatch) dados.tribunal = tribunalMatch[0].trim();
 
   // Extract orgao julgador  
-  const orgaoMatch = markdown.match(/(?:\d+[ªa]?\s*(?:Vara|Turma|Câmara|Seção)[^\n,.)]{0,60})/i);
+  const orgaoMatch = markdown.match(/(?:Ju[ií]zo\s+Federal\s+da?\s+\d+[ªa]?\s*Vara[^\n,.)]{0,30})/i)
+    || markdown.match(/(?:\d+[ªa]?\s*(?:Vara|Turma|Câmara|Seção)[^\n,.)]{0,40})/i);
   if (orgaoMatch) dados.orgao_julgador = orgaoMatch[0].trim();
 
   // Extract classe
@@ -161,28 +163,58 @@ function parseEscavadorMarkdown(markdown: string, links: string[], numero: strin
   const assuntoMatch = markdown.match(/(?:Assunto|Matéria)[:\s]*([^\n]{3,100})/i);
   if (assuntoMatch) dados.assunto = assuntoMatch[1].trim();
 
-  // Extract partes
+  // Extract partes from "partes envolvidas" section or standard patterns
+  const partesEnvolvidasMatch = markdown.match(/partes\s+envolvidas\s+(.+?)(?:\.\s|$)/i);
+  if (partesEnvolvidasMatch) {
+    // Extract names from links like [Name](url)
+    const nameMatches = partesEnvolvidasMatch[1].matchAll(/\[([^\]]+)\]/g);
+    for (const m of nameMatches) {
+      const name = m[1].trim();
+      if (name && !dados.partes.includes(name) && name.length > 2 && !name.startsWith('http')) {
+        dados.partes.push(name);
+      }
+    }
+  }
+  
+  // Also try standard patterns
   const partesPatterns = [
     /(?:Autor|Réu|Requerente|Requerido|Exequente|Executado|Apelante|Apelado|Beneficiário)[:\s]+([^\n]{3,80})/gi,
-    /(?:Parte\s+\d+|Polo\s+(?:ativo|passivo))[:\s]+([^\n]{3,80})/gi,
   ];
   
   for (const pattern of partesPatterns) {
     let match;
     while ((match = pattern.exec(markdown)) !== null) {
-      const name = match[1].trim().replace(/\*\*/g, '');
+      const name = match[1].trim().replace(/\*\*/g, '').replace(/\[|\]/g, '');
       if (name && !dados.partes.includes(name) && name.length > 2) {
         dados.partes.push(name);
       }
     }
   }
 
-  // Build summary - get first meaningful content section
-  const lines = markdown.split('\n').filter(l => l.trim().length > 10);
-  const summaryLines = lines.slice(0, 10).join('\n');
-  if (summaryLines) {
-    dados.resumo = summaryLines.substring(0, 600).replace(/\*\*/g, '').replace(/\n{3,}/g, '\n\n').trim();
-    if (summaryLines.length > 600) dados.resumo += '…';
+  // Build summary - extract meaningful content, skip navigation markup
+  const meaningfulLines = markdown.split('\n')
+    .filter(l => {
+      const trimmed = l.trim();
+      return trimmed.length > 15 
+        && !trimmed.startsWith('[') 
+        && !trimmed.startsWith('Logo')
+        && !trimmed.includes('Fechar menu')
+        && !trimmed.includes('Abrir menu')
+        && !trimmed.includes('Entrar')
+        && !trimmed.includes('Cadastrar')
+        && !trimmed.includes('Relatórios jurídicos')
+        && !trimmed.includes('Diários Oficiais');
+    });
+  
+  const summaryText = meaningfulLines.slice(0, 8).join('\n');
+  if (summaryText) {
+    dados.resumo = summaryText
+      .substring(0, 600)
+      .replace(/\*\*/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Convert markdown links to text
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    if (summaryText.length > 600) dados.resumo += '…';
   }
 
   return dados;
