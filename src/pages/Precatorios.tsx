@@ -227,18 +227,18 @@ export default function Precatorios() {
                     <td className="px-4 py-2.5 text-muted-foreground text-xs">
                       {item.telefones?.length || item.emails?.length ? "📞 📧" : "—"}
                     </td>
-                    <EscavadorExpandedRow
-                      item={item}
-                      isExpanded={expandedId === item.id}
-                      onToggle={toggleExpanded}
-                    />
+                    <td className="px-4 py-2.5">
+                      <EscavadorCell
+                        item={item}
+                        isExpanded={expandedId === item.id}
+                        onToggle={toggleExpanded}
+                      />
+                    </td>
                   </tr>
                   {expandedId === item.id && (
-                    <EscavadorExpandedRow
-                      item={item}
-                      isExpanded={true}
-                      onToggle={toggleExpanded}
-                    />
+                    <tr className="bg-muted/30">
+                      <EscavadorExpandedContent item={item} />
+                    </tr>
                   )}
                 </React.Fragment>
               ))}
