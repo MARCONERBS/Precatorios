@@ -5,7 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { RefreshCw, Download, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
-import { EscavadorRow, EscavadorExpandedContent } from "@/components/EscavadorRow";
+
 
 type StatusType = "pendente" | "buscando" | "encontrado" | "erro" | "contato_pronto";
 
