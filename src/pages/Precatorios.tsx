@@ -405,20 +405,13 @@ function EscavadorExpandedContent({ dados, error }: { dados: any; error: string 
   if (dados.encontrado === false) {
     return (
       <div className="px-6 py-4 text-sm text-muted-foreground bg-muted/30">
-        {dados.mensagem || "Processo não encontrado na base do Datajud/CNJ."}
+        {dados.mensagem || "Nenhum resultado encontrado na web."}
       </div>
     );
   }
 
   return (
     <div className="px-6 py-4 bg-muted/30 space-y-3 text-sm border-l-4 border-primary/30">
-      {dados.classe && (
-        <div>
-          <span className="font-medium text-foreground">Classe: </span>
-          <span className="text-muted-foreground">{dados.classe}</span>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {dados.tribunal && (
           <div>
@@ -426,64 +419,56 @@ function EscavadorExpandedContent({ dados, error }: { dados: any; error: string 
             <span className="text-muted-foreground">{dados.tribunal}</span>
           </div>
         )}
-        {dados.orgao_julgador && (
+        {dados.classe && (
           <div>
-            <span className="font-medium text-foreground">Órgão Julgador: </span>
-            <span className="text-muted-foreground">{dados.orgao_julgador}</span>
+            <span className="font-medium text-foreground">Classe: </span>
+            <span className="text-muted-foreground">{dados.classe}</span>
           </div>
         )}
-        {dados.grau && (
+        {dados.vara && (
           <div>
-            <span className="font-medium text-foreground">Grau: </span>
-            <span className="text-muted-foreground">{dados.grau}</span>
-          </div>
-        )}
-        {dados.data_ajuizamento && (
-          <div>
-            <span className="font-medium text-foreground">Ajuizamento: </span>
-            <span className="text-muted-foreground">
-              {new Date(dados.data_ajuizamento).toLocaleDateString("pt-BR")}
-            </span>
-          </div>
-        )}
-        {dados.formato && (
-          <div>
-            <span className="font-medium text-foreground">Formato: </span>
-            <span className="text-muted-foreground">{dados.formato}</span>
-          </div>
-        )}
-        {dados.sistema && (
-          <div>
-            <span className="font-medium text-foreground">Sistema: </span>
-            <span className="text-muted-foreground">{dados.sistema}</span>
+            <span className="font-medium text-foreground">Vara: </span>
+            <span className="text-muted-foreground">{dados.vara}</span>
           </div>
         )}
       </div>
 
-      {dados.assuntos?.length > 0 && (
+      {dados.partes?.length > 0 && (
         <div>
-          <span className="font-medium text-foreground block mb-1">Assuntos:</span>
+          <span className="font-medium text-foreground block mb-1">Partes:</span>
           <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
-            {dados.assuntos.map((a: string, i: number) => (
-              <li key={i}>{a}</li>
+            {dados.partes.map((p: string, i: number) => (
+              <li key={i}>{p}</li>
             ))}
           </ul>
         </div>
       )}
 
-      {dados.movimentacoes?.length > 0 && (
+      {dados.resumo && (
         <div>
-          <span className="font-medium text-foreground block mb-1">Últimas Movimentações:</span>
-          <ul className="space-y-1.5 text-muted-foreground text-xs">
-            {dados.movimentacoes.map((m: any, i: number) => (
-              <li key={i} className="border-l-2 border-primary/30 pl-3">
-                <span className="font-mono text-foreground/70">
-                  {m.data ? new Date(m.data).toLocaleDateString("pt-BR") : ""}
-                </span>
-                {" — "}
-                <span>{m.nome}</span>
-                {m.complementos?.length > 0 && (
-                  <span className="text-muted-foreground/70"> ({m.complementos.join(", ")})</span>
+          <span className="font-medium text-foreground block mb-1">Resumo:</span>
+          <pre className="text-xs text-muted-foreground whitespace-pre-wrap bg-background/50 rounded p-3 max-h-40 overflow-auto">
+            {dados.resumo}
+          </pre>
+        </div>
+      )}
+
+      {dados.resultados?.length > 0 && (
+        <div>
+          <span className="font-medium text-foreground block mb-1">Fontes encontradas:</span>
+          <ul className="space-y-2">
+            {dados.resultados.slice(0, 5).map((r: any, i: number) => (
+              <li key={i} className="border-l-2 border-primary/20 pl-3">
+                <a
+                  href={r.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline text-xs font-medium"
+                >
+                  {r.titulo}
+                </a>
+                {r.snippet && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{r.snippet}</p>
                 )}
               </li>
             ))}
