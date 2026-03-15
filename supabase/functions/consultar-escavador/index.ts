@@ -101,11 +101,13 @@ function extractDuckDuckGoResults(html: string) {
   // Extract structured info from all text
   const allText = data.resultados.map((r) => r.snippet + " " + r.titulo).join(" ");
 
-  // Extract parties from snippets (common patterns in Escavador/JusBrasil results)
-  const entreMatch = allText.match(/entre\s+(.+?)\s+(?:e\s+(?:outros\s+e\s+)?)?(.+?)(?:\s+no\s+|\s+em\s+|\.\s|$)/i);
+  // Extract parties from "entre X e Y" pattern in Escavador/JusBrasil snippets
+  const entreMatch = allText.match(/entre\s+(.+?)\s+e\s+(?:outros\s+e\s+)?(.+?)(?:\s+no\s+Escavador|\s+no\s+JusBrasil|\.\s|$)/i);
   if (entreMatch) {
-    data.partes.push(entreMatch[1].trim());
-    if (entreMatch[2]) data.partes.push(entreMatch[2].trim());
+    const parte1 = entreMatch[1].replace(/\s+e\s+outros$/i, "").trim();
+    const parte2 = entreMatch[2].trim();
+    if (parte1.length > 3) data.partes.push(parte1);
+    if (parte2.length > 3) data.partes.push(parte2);
   }
 
   // More party patterns
