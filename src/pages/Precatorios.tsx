@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { RefreshCw, Download, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { EscavadorExpandedRow } from "@/components/EscavadorExpandedRow";
 
 type StatusType = "pendente" | "buscando" | "encontrado" | "erro" | "contato_pronto";
 
@@ -33,6 +34,7 @@ export default function Precatorios() {
   const [page, setPage] = useState(0);
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["precatorios", page, sortField, sortDir],
@@ -101,6 +103,10 @@ export default function Precatorios() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const toggleExpanded = (id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id));
   };
 
   const getPageNumbers = () => {
@@ -185,6 +191,7 @@ export default function Precatorios() {
                 </th>
                 <th className="text-left font-medium text-muted-foreground px-4 py-3">CPF</th>
                 <th className="text-left font-medium text-muted-foreground px-4 py-3">Contato</th>
+                <th className="text-left font-medium text-muted-foreground px-4 py-3">Escavador</th>
               </tr>
             </thead>
             <tbody>
@@ -197,29 +204,43 @@ export default function Precatorios() {
                     <td className="px-4 py-2.5"><div className="h-4 w-20 bg-muted rounded animate-pulse" /></td>
                     <td className="px-4 py-2.5"><div className="h-4 w-24 bg-muted rounded animate-pulse" /></td>
                     <td className="px-4 py-2.5"><div className="h-4 w-12 bg-muted rounded animate-pulse" /></td>
+                    <td className="px-4 py-2.5"><div className="h-4 w-16 bg-muted rounded animate-pulse" /></td>
                   </tr>
                 ))}
               {precatorios?.map((item) => (
-                <tr
-                  key={item.id}
-                  className="border-b border-border last:border-0 hover:bg-accent/50 transition-colors"
-                  style={{ height: 44 }}
-                >
-                  <td className="px-4 py-2.5 font-mono text-xs text-foreground">{item.numero}</td>
-                  <td className="px-4 py-2.5 text-center text-xs text-muted-foreground">{item.ano}</td>
-                  <td className="px-4 py-2.5 text-right font-mono text-sm font-medium text-foreground">
-                    {formatCurrency(Number(item.valor))}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <StatusBadge status={statusMap[item.status] || "pendente"} />
-                  </td>
-                  <td className="px-4 py-2.5 text-muted-foreground text-xs font-mono">
-                    {item.cpf || "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-muted-foreground text-xs">
-                    {item.telefones?.length || item.emails?.length ? "📞 📧" : "—"}
-                  </td>
-                </tr>
+                <React.Fragment key={item.id}>
+                  <tr
+                    className="border-b border-border last:border-0 hover:bg-accent/50 transition-colors"
+                    style={{ height: 44 }}
+                  >
+                    <td className="px-4 py-2.5 font-mono text-xs text-foreground">{item.numero}</td>
+                    <td className="px-4 py-2.5 text-center text-xs text-muted-foreground">{item.ano}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm font-medium text-foreground">
+                      {formatCurrency(Number(item.valor))}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <StatusBadge status={statusMap[item.status] || "pendente"} />
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs font-mono">
+                      {item.cpf || "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground text-xs">
+                      {item.telefones?.length || item.emails?.length ? "📞 📧" : "—"}
+                    </td>
+                    <EscavadorExpandedRow
+                      item={item}
+                      isExpanded={expandedId === item.id}
+                      onToggle={toggleExpanded}
+                    />
+                  </tr>
+                  {expandedId === item.id && (
+                    <EscavadorExpandedRow
+                      item={item}
+                      isExpanded={true}
+                      onToggle={toggleExpanded}
+                    />
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
