@@ -191,41 +191,21 @@ function parseEscavadorMarkdown(markdown: string, links: string[], numero: strin
     }
   }
 
-  // Build summary from the "partes envolvidas" context or clean text
-  const contextMatch = markdown.match(/Tem como partes envolvidas(.+?)(?:\.\s*$|\n\n)/ms);
+  // Build summary from the "partes envolvidas" context
+  const contextMatch = markdown.match(/Tem como partes envolvidas\s+(.+?)(?:\.\s|e outros)/is);
   if (contextMatch) {
-    dados.resumo = ('Partes envolvidas' + contextMatch[1])
+    const raw = contextMatch[1]
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/\*\*/g, '')
+      .replace(/\n/g, ' ')
       .trim();
-  } else {
-    // Filter out navigation/UI text
-    const skipPatterns = [
-      /Fechar menu|Abrir menu|Entrar|Cadastrar/i,
-      /Relatórios|Diários Oficiais|Jurisprudência|Legislaç/i,
-      /Acompanhe processos|Integre dados|Simplifique o complexo/i,
-      /funcionalidades exclusivas|plataforma pronta/i,
-      /^\[/,
-      /^Logo/,
-      /escavador\.com/i,
-      /andamento da ação/i,
-    ];
-    
-    const meaningfulLines = markdown.split('\n')
-      .filter(l => {
-        const trimmed = l.trim();
-        if (trimmed.length < 20) return false;
-        return !skipPatterns.some(p => p.test(trimmed));
-      });
-    
-    const summaryText = meaningfulLines.slice(0, 5).join('\n');
-    if (summaryText) {
-      dados.resumo = summaryText
-        .substring(0, 400)
-        .replace(/\*\*/g, '')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-        .trim();
-    }
+    dados.resumo = `Partes envolvidas: ${raw}`;
+  }
+
+  // Extract date if available
+  const dateMatch = markdown.match(/(?:em|desde)\s+(\d{1,2}\s+de\s+\w+\s+de\s+\d{4})/i);
+  if (dateMatch) {
+    dados.data_publicacao = dateMatch[1];
   }
 
   return dados;
