@@ -1,0 +1,1 @@
+ALTER TABLE public.precatorios ADD CONSTRAINT precatorios_numero_user_id_unique UNIQUE (numero, user_id);
