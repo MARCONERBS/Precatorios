@@ -350,8 +350,8 @@ async function tryWebSearch(apiKey: string, numero: string) {
 }
 
 function isUiElement(text: string): boolean {
-  const uiTerms = ['Fechar', 'Entrar', 'menu', 'Cadastre', 'Login', 'Buscar', 'Pesquisar', 'Ver mais', 'Saiba mais', 'Termos', 'Privacidade', 'Cookie'];
-  return uiTerms.some(term => text.toLowerCase().includes(term.toLowerCase()));
+  const uiTerms = ['Fechar', 'Entrar', 'menu', 'Cadastre', 'Login', 'Buscar', 'Pesquisar', 'Ver mais', 'Saiba mais', 'Termos', 'Privacidade', 'Cookie', 'Solicitar', 'Polo Ativo', 'Polo Passivo', 'Exibir', 'Compartilhar', 'sem internet'];
+  return uiTerms.some(term => text.toLowerCase().includes(term.toLowerCase())) || /^[—\-\s\\]+/.test(text);
 }
 
 function isUiLine(line: string): boolean {
