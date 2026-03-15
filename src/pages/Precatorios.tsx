@@ -1,11 +1,11 @@
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RefreshCw, Download, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
-import { EscavadorExpandedRow } from "@/components/EscavadorExpandedRow";
+import { EscavadorCell, EscavadorExpandedContent } from "@/components/EscavadorExpandedRow";
 
 type StatusType = "pendente" | "buscando" | "encontrado" | "erro" | "contato_pronto";
 
