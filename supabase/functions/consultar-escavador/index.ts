@@ -6,13 +6,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-function extractDataFromSnippets(html: string, numero: string) {
+function extractDuckDuckGoResults(html: string) {
   const data: {
     encontrado: boolean;
     resultados: Array<{ titulo: string; link: string; snippet: string }>;
     partes: string[];
     tribunal: string | null;
-    vara: string | null;
     classe: string | null;
     resumo: string | null;
   } = {
@@ -20,59 +19,53 @@ function extractDataFromSnippets(html: string, numero: string) {
     resultados: [],
     partes: [],
     tribunal: null,
-    vara: null,
     classe: null,
     resumo: null,
   };
 
-  // Extract Google search results
-  const resultRegex = /<div class="[^"]*"[^>]*>[\s\S]*?<a href="\/url\?q=([^&"]+)[^"]*"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/gi;
-  let match;
-  while ((match = resultRegex.exec(html)) !== null) {
-    const link = decodeURIComponent(match[1]);
-    const titulo = match[2].replace(/<[^>]+>/g, "").trim();
-    const snippet = match[3].replace(/<[^>]+>/g, "").trim();
-    if (titulo && snippet && link && !link.includes("google.com")) {
-      data.resultados.push({ titulo, link, snippet });
-    }
+  // DuckDuckGo HTML lite results pattern
+  // Try multiple patterns for DuckDuckGo result extraction
+  
+  // Pattern 1: result__a links with result__snippet
+  const linkRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+  
+  const links: Array<{titulo: string; link: string}> = [];
+  let linkMatch;
+  while ((linkMatch = linkRegex.exec(html)) !== null) {
+    links.push({
+      link: linkMatch[1],
+      titulo: linkMatch[2].replace(/<[^>]+>/g, "").trim(),
+    });
+  }
+  
+  const snippets: string[] = [];
+  let snippetMatch;
+  while ((snippetMatch = snippetRegex.exec(html)) !== null) {
+    snippets.push(snippetMatch[1].replace(/<[^>]+>/g, "").trim());
   }
 
-  // Alternative: simpler result extraction
+  for (let i = 0; i < links.length; i++) {
+    data.resultados.push({
+      titulo: links[i].titulo,
+      link: links[i].link,
+      snippet: snippets[i] || "",
+    });
+  }
+
+  // Pattern 2: fallback - extract any links with titles
   if (data.resultados.length === 0) {
-    // Try h3 + cite + span pattern
-    const h3Regex = /<h3[^>]*>([\s\S]*?)<\/h3>/gi;
-    const titles: string[] = [];
-    let h3Match;
-    while ((h3Match = h3Regex.exec(html)) !== null) {
-      titles.push(h3Match[1].replace(/<[^>]+>/g, "").trim());
-    }
-
-    // Extract all visible text snippets near the search results
-    const snippetRegex = /<span[^>]*class="[^"]*(?:st|aCOpRe|IsZvec)[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
-    const snippets: string[] = [];
-    let snipMatch;
-    while ((snipMatch = snippetRegex.exec(html)) !== null) {
-      const text = snipMatch[1].replace(/<[^>]+>/g, "").trim();
-      if (text.length > 30) snippets.push(text);
-    }
-
-    // Extract links
-    const linkRegex = /<a href="\/url\?q=([^&"]+)/gi;
-    const links: string[] = [];
-    let linkMatch;
-    while ((linkMatch = linkRegex.exec(html)) !== null) {
-      const url = decodeURIComponent(linkMatch[1]);
-      if (!url.includes("google.com") && !url.includes("accounts.google")) {
-        links.push(url);
+    const genericRegex = /<a[^>]*href="(https?:\/\/(?!duckduckgo)[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    let gMatch;
+    const seen = new Set<string>();
+    while ((gMatch = genericRegex.exec(html)) !== null) {
+      const link = gMatch[1];
+      const titulo = gMatch[2].replace(/<[^>]+>/g, "").trim();
+      if (titulo.length > 10 && !seen.has(link) && 
+          (link.includes("jusbrasil") || link.includes("escavador") || link.includes("trf") || link.includes("cnj"))) {
+        seen.add(link);
+        data.resultados.push({ titulo, link, snippet: "" });
       }
-    }
-
-    for (let i = 0; i < Math.min(titles.length, 10); i++) {
-      data.resultados.push({
-        titulo: titles[i] || "",
-        link: links[i] || "",
-        snippet: snippets[i] || "",
-      });
     }
   }
 
@@ -80,29 +73,28 @@ function extractDataFromSnippets(html: string, numero: string) {
     data.encontrado = true;
   }
 
-  // Extract party names from snippets
+  // Extract info from snippets
   const allText = data.resultados.map((r) => r.snippet + " " + r.titulo).join(" ");
 
-  const parteRegex = /(?:Autor|Réu|Requerente|Requerido|Exequente|Executado|Impetrante|Impetrado|Apelante|Apelado|Recorrente|Recorrido|Agravante|Agravado)[:\s]+([^.;,\n]{3,80})/gi;
+  // Parties
+  const parteRegex = /(?:Autor|Réu|Requerente|Requerido|Exequente|Executado|Impetrante|Impetrado|Apelante|Apelado)[:\s]+([^.;,\n]{3,80})/gi;
   let parteMatch;
   while ((parteMatch = parteRegex.exec(allText)) !== null) {
-    const parte = `${parteMatch[0].trim()}`;
-    if (!data.partes.includes(parte)) {
-      data.partes.push(parte);
-    }
+    const parte = parteMatch[0].trim();
+    if (!data.partes.includes(parte)) data.partes.push(parte);
   }
 
-  // Extract tribunal
-  const tribunalMatch = allText.match(/(?:TRF|TJ|TST|STJ|STF)[^\s]*\s*(?:da\s+)?(?:\d+[ªa]\s+)?(?:Região|Região|região)?/i);
+  // Tribunal
+  const tribunalMatch = allText.match(/(?:TRF|TJ|TST|STJ|STF)\s*(?:\d+[ªa]?\s*(?:Região)?)?/i);
   if (tribunalMatch) data.tribunal = tribunalMatch[0].trim();
 
-  // Extract classe
-  const classeMatch = allText.match(/(?:Precatório|Execução|Ação\s+\w+|Mandado\s+de\s+Segurança|Recurso\s+\w+)/i);
+  // Classe
+  const classeMatch = allText.match(/(?:Precatório|Execução\s+\w+|Ação\s+\w+|Mandado\s+de\s+Segurança)/i);
   if (classeMatch) data.classe = classeMatch[0].trim();
 
-  // Build a summary from the best snippets
+  // Summary
   const relevantSnippets = data.resultados
-    .filter((r) => r.snippet.length > 40)
+    .filter((r) => r.snippet.length > 30)
     .slice(0, 3)
     .map((r) => r.snippet);
   if (relevantSnippets.length > 0) {
@@ -127,23 +119,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log("Buscando no Google:", numero);
+    console.log("Buscando no DuckDuckGo:", numero);
 
-    // Search Google for the precatório number
-    const query = encodeURIComponent(`"${numero}" processo precatório site:jusbrasil.com.br OR site:escavador.com OR site:trf1.jus.br`);
-    const googleUrl = `https://www.google.com/search?q=${query}&hl=pt-BR&num=10`;
+    // Use DuckDuckGo HTML lite (no JS needed, no captcha)
+    const query = encodeURIComponent(`"${numero}" processo precatório`);
+    const ddgUrl = `https://html.duckduckgo.com/html/?q=${query}`;
 
-    const response = await fetch(googleUrl, {
+    const response = await fetch(ddgUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Cache-Control": "no-cache",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "pt-BR,pt;q=0.9",
       },
     });
 
     if (!response.ok) {
-      console.error("Google returned status:", response.status);
+      console.error("DuckDuckGo returned status:", response.status);
       return new Response(
         JSON.stringify({
           success: false,
@@ -154,11 +145,12 @@ Deno.serve(async (req) => {
     }
 
     const html = await response.text();
-    console.log("HTML recebido do Google, tamanho:", html.length);
+    console.log("HTML recebido, tamanho:", html.length);
 
-    const dados = extractDataFromSnippets(html, numero);
+    const dados = extractDuckDuckGoResults(html);
+    console.log("Resultados encontrados:", dados.resultados.length);
 
-    // Save to database if we have a precatorio_id
+    // Save to database
     if (precatorio_id && dados.encontrado) {
       const authHeader = req.headers.get("Authorization");
       if (authHeader) {
