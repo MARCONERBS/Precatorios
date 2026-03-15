@@ -106,8 +106,6 @@ export function EscavadorExpandedContent({ item }: { item: { escavador_dados: an
             <p className="text-foreground mt-0.5">{dados.data_publicacao}</p>
           </div>
         )}
-          </div>
-        )}
       </div>
 
       {dados.partes?.length > 0 && (
