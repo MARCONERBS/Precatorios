@@ -1,0 +1,1 @@
+ALTER TABLE public.precatorios ADD COLUMN escavador_dados jsonb DEFAULT NULL;

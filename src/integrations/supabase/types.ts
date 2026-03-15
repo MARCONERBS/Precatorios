@@ -92,6 +92,7 @@ export type Database = {
           created_at: string
           emails: string[] | null
           erro_mensagem: string | null
+          escavador_dados: Json | null
           id: string
           kanban_coluna: string
           nome_titular: string | null
@@ -108,6 +109,7 @@ export type Database = {
           created_at?: string
           emails?: string[] | null
           erro_mensagem?: string | null
+          escavador_dados?: Json | null
           id?: string
           kanban_coluna?: string
           nome_titular?: string | null
@@ -124,6 +126,7 @@ export type Database = {
           created_at?: string
           emails?: string[] | null
           erro_mensagem?: string | null
+          escavador_dados?: Json | null
           id?: string
           kanban_coluna?: string
           nome_titular?: string | null
