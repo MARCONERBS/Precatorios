@@ -425,6 +425,12 @@ function EscavadorExpandedContent({ dados, error }: { dados: any; error: string 
             <span className="text-muted-foreground">{dados.classe}</span>
           </div>
         )}
+        {dados.orgao_julgador && (
+          <div>
+            <span className="font-medium text-foreground">Órgão Julgador: </span>
+            <span className="text-muted-foreground">{dados.orgao_julgador}</span>
+          </div>
+        )}
         {dados.vara && (
           <div>
             <span className="font-medium text-foreground">Vara: </span>
