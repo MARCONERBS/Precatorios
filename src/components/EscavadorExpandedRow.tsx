@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Search, Loader2, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { Search, Loader2, ChevronDown, ChevronUp, ExternalLink, Scale, Building2, Gavel, Calendar, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -39,7 +39,6 @@ export function EscavadorCell({ item, isExpanded, onToggle }: EscavadorProps) {
 
       if (data?.success && data?.dados) {
         await supabase.from("precatorios").update({ escavador_dados: data.dados }).eq("id", item.id);
-        // Invalidate query to refresh data from DB
         await queryClient.invalidateQueries({ queryKey: ["precatorios"] });
         onToggle(item.id);
       } else if (data?.encontrado === false) {
@@ -65,79 +64,133 @@ export function EscavadorCell({ item, isExpanded, onToggle }: EscavadorProps) {
   );
 }
 
+function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2.5 p-3 rounded-lg bg-background border border-border/60">
+      <div className="mt-0.5 flex-shrink-0 h-7 w-7 rounded-md bg-primary/10 flex items-center justify-center">
+        <Icon className="h-3.5 w-3.5 text-primary" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
+        <p className="text-sm text-foreground mt-0.5 leading-snug">{value}</p>
+      </div>
+    </div>
+  );
+}
+
 export function EscavadorExpandedContent({ item }: { item: { escavador_dados: any } }) {
   const dados = item.escavador_dados as any;
   if (!dados || dados.encontrado === false) {
     return (
-      <td colSpan={7} className="px-6 py-4 text-center text-muted-foreground text-xs">
+      <td colSpan={7} className="px-6 py-6 text-center text-muted-foreground text-sm">
         Nenhum resultado encontrado no Escavador.
       </td>
     );
   }
 
+  // Filter out noisy partes
+  const cleanPartes = (dados.partes || []).filter((p: string) => {
+    const lower = p.toLowerCase();
+    return p.length > 2
+      && !lower.includes('monitorar')
+      && !lower.includes('solicitar')
+      && !lower.includes('polo ativo')
+      && !lower.includes('polo passivo')
+      && !p.startsWith('—');
+  });
+
+  // Clean resumo - remove noisy lines
+  const cleanResumo = dados.resumo
+    ? dados.resumo
+        .split('\n')
+        .filter((line: string) => {
+          const l = line.trim().toLowerCase();
+          return l.length > 3
+            && !l.includes('sem internet')
+            && !l.includes('verifique seu sinal')
+            && !l.includes('processo ativo')
+            && !l.includes('compartilhar')
+            && !l.includes('exibir número')
+            && !l.includes('valor da causa')
+            && !l.includes('indisponível')
+            && !l.includes('última verificação')
+            && !l.startsWith('016') // process number
+            && !l.startsWith('monitorar');
+        })
+        .join('\n')
+        .trim()
+    : null;
+
   return (
-    <td colSpan={7} className="px-6 py-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-        {dados.tribunal && (
+    <td colSpan={7} className="p-0">
+      <div className="px-6 py-5 space-y-4 bg-muted/20 border-t border-border/40">
+        {/* Info cards grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {dados.tribunal && (
+            <InfoCard icon={Building2} label="Tribunal" value={dados.tribunal} />
+          )}
+          {dados.orgao_julgador && (
+            <InfoCard icon={Gavel} label="Órgão Julgador" value={dados.orgao_julgador} />
+          )}
+          {dados.assunto && (
+            <InfoCard icon={Scale} label="Assunto" value={dados.assunto} />
+          )}
+          {dados.data_publicacao && (
+            <InfoCard icon={Calendar} label="Data" value={dados.data_publicacao} />
+          )}
+          {dados.classe && (
+            <InfoCard icon={Scale} label="Classe" value={dados.classe} />
+          )}
+        </div>
+
+        {/* Partes */}
+        {cleanPartes.length > 0 && (
           <div>
-            <span className="text-muted-foreground font-medium">Tribunal</span>
-            <p className="text-foreground mt-0.5">{dados.tribunal}</p>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Users className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Partes Envolvidas</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {cleanPartes.map((p: string, i: number) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-primary/8 text-primary border border-primary/15"
+                >
+                  {p}
+                </span>
+              ))}
+            </div>
           </div>
         )}
-        {dados.orgao_julgador && (
-          <div>
-            <span className="text-muted-foreground font-medium">Órgão Julgador</span>
-            <p className="text-foreground mt-0.5">{dados.orgao_julgador}</p>
+
+        {/* Resumo */}
+        {cleanResumo && (
+          <div className="rounded-lg bg-background border border-border/60 p-4">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Resumo</p>
+            <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line max-w-3xl">
+              {cleanResumo}
+            </p>
           </div>
         )}
-        {dados.classe && (
-          <div>
-            <span className="text-muted-foreground font-medium">Classe</span>
-            <p className="text-foreground mt-0.5">{dados.classe}</p>
-          </div>
-        )}
-        {dados.assunto && (
-          <div>
-            <span className="text-muted-foreground font-medium">Assunto</span>
-            <p className="text-foreground mt-0.5">{dados.assunto}</p>
-          </div>
-        )}
-        {dados.data_publicacao && (
-          <div>
-            <span className="text-muted-foreground font-medium">Data</span>
-            <p className="text-foreground mt-0.5">{dados.data_publicacao}</p>
+
+        {/* Fonte link */}
+        {dados.fontes?.length > 0 && (
+          <div className="flex items-center gap-3 pt-1">
+            {dados.fontes.map((f: { url: string; titulo: string }, i: number) => (
+              <a
+                key={i}
+                href={f.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                {f.titulo?.substring(0, 50) || "Ver no Escavador"}
+              </a>
+            ))}
           </div>
         )}
       </div>
-
-      {dados.partes?.length > 0 && (
-        <div className="mt-3">
-          <span className="text-muted-foreground font-medium text-xs">Partes</span>
-          <div className="flex flex-wrap gap-1.5 mt-1">
-            {dados.partes.map((p: string, i: number) => (
-              <span key={i} className="bg-accent text-accent-foreground px-2 py-0.5 rounded text-xs">{p}</span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {dados.resumo && (
-        <div className="mt-3">
-          <span className="text-muted-foreground font-medium text-xs">Resumo</span>
-          <p className="text-foreground text-xs mt-0.5 whitespace-pre-line leading-relaxed max-w-3xl">{dados.resumo}</p>
-        </div>
-      )}
-
-      {dados.fontes?.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {dados.fontes.map((f: { url: string; titulo: string }, i: number) => (
-            <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-              <ExternalLink className="h-3 w-3" />
-              {f.titulo?.substring(0, 50) || "Fonte"}
-            </a>
-          ))}
-        </div>
-      )}
     </td>
   );
 }
