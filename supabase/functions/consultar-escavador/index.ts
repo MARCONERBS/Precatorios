@@ -212,6 +212,7 @@ function parseProcessPage(markdown: string, url: string, numero: string) {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\*\*/g, '')
     .replace(/#{1,6}\s+/g, '')
+    .replace(/\\{2,}/g, '')
     .split('\n')
     .filter(line => line.trim().length > 10 && !isUiLine(line))
     .slice(0, 8)
