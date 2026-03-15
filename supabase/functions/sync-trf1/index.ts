@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
     const BATCH_SIZE = 500;
     for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
       const batch = toInsert.slice(i, i + BATCH_SIZE);
-      const { error: insertError } = await supabase.from("precatorios").insert(batch);
+      const { error: insertError } = await supabase.from("precatorios").upsert(batch, { onConflict: "numero,user_id", ignoreDuplicates: true });
       if (insertError) console.error(`Batch error at ${i}:`, insertError.message);
       else inserted += batch.length;
     }
