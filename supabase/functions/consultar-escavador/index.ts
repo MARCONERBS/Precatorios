@@ -123,7 +123,7 @@ function extractDuckDuckGoResults(html: string) {
   if (tribunalMatch) data.tribunal = tribunalMatch[0].trim();
 
   // Órgão julgador (e.g., "Juizo Federal da 7a Vara - Ba")
-  const orgaoMatch = allText.match(/(?:Ju[ií]zo\s+Federal\s+da?\s+\d+[ªa]?\s+Vara[^,\n.]*)/i);
+  const orgaoMatch = allText.match(/Ju[ií]zo\s+Federal\s+d[aeo]\s+\d+[ªa]?\s+Vara(?:\s*-\s*\w+)?/i);
   if (orgaoMatch) data.orgao_julgador = orgaoMatch[0].trim();
 
   // Classe
