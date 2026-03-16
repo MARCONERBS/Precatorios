@@ -11,6 +11,7 @@ import Precatorios from "./pages/Precatorios";
 import KanbanPage from "./pages/KanbanPage";
 import ChatPage from "./pages/ChatPage";
 import ConnectionPage from "./pages/ConnectionPage";
+import TemplatesPage from "./pages/TemplatesPage";
 import Configuracoes from "./pages/Configuracoes";
 import NotFound from "./pages/NotFound";
 
@@ -36,6 +37,7 @@ const App = () => (
             <Route path="/kanban" element={<KanbanPage />} />
             <Route path="/evachat/conectar" element={<ConnectionPage />} />
             <Route path="/evachat/chat" element={<ChatPage />} />
+            <Route path="/evachat/templates" element={<TemplatesPage />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
           </Route>
           <Route path="*" element={<NotFound />} />

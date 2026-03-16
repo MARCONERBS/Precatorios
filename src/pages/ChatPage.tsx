@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { cn } from "@/lib/utils";
-import { Send, Plus, MessageSquare, Trash2, AlertTriangle } from "lucide-react";
+import { Send, Plus, MessageSquare, Trash2, AlertTriangle, BookOpen, Copy, Edit2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,6 +11,14 @@ import {
 import { toast } from "sonner";
 import { evaApi } from "@/lib/evaapi";
 import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
+} from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Message {
   id: string;
@@ -32,7 +40,9 @@ interface Contact {
 
 type StatusFilter = "todos" | "pendente" | "aberto";
 
+
 export default function ChatPage() {
+  const navigate = useNavigate();
   const [token, setToken] = useState<string | null>(null);
   const [instanceDbId, setInstanceDbId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -109,6 +119,7 @@ export default function ChatPage() {
       setMessagesByContact(grouped);
     } catch (e) { console.error("loadHistory:", e); }
   };
+
 
   const fetchAvatar = async (instanceToken: string, waId: string) => {
     try {
@@ -448,9 +459,12 @@ export default function ChatPage() {
                 </div>
 
                 <div className="p-4 border-t-4 border-border bg-background flex-shrink-0">
-                  <form onSubmit={handleSendMessage} className="flex gap-4">
-                    <Input value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="MENSAGEM..."
-                      className="flex-1 h-14 border-2 border-border shadow-[4px_4px_0_0_rgba(11,11,11,1)] rounded-none focus-visible:ring-0 focus-visible:border-primary font-bold px-4" />
+                  <form onSubmit={handleSendMessage} className="flex gap-4 items-end">
+                    <div className="flex-1 flex flex-col gap-2">
+
+                       <Input value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="MENSAGEM..."
+                          className="flex-1 h-14 border-2 border-border shadow-[4px_4px_0_0_rgba(11,11,11,1)] rounded-none focus-visible:ring-0 focus-visible:border-primary font-bold px-4" />
+                    </div>
                     <Button type="submit" disabled={!messageText.trim()}
                       className="h-14 px-10 border-2 shadow-[4px_4px_0_0_rgba(11,11,11,1)] font-black uppercase transition-none active:translate-x-1 active:translate-y-1 active:shadow-none">
                       <Send className="w-5 h-5 mr-3" /> ENVIAR

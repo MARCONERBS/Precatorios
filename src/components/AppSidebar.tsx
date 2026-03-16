@@ -33,6 +33,7 @@ const navItems = [
     items: [
       { title: "Conectar", url: "/evachat/conectar" },
       { title: "Chat", url: "/evachat/chat" },
+      { title: "Templates", url: "/evachat/templates" },
     ],
   },
   { title: "Configurações", url: "/configuracoes", icon: Settings },

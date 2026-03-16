@@ -1,3 +1,5 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
@@ -9,354 +11,348 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { numero } = await req.json();
+    const { numero, user_id } = await req.json();
 
     if (!numero) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Número do precatório é obrigatório' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return jsonResponse({ success: false, error: 'Número do precatório é obrigatório' }, 400);
     }
 
-    const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Firecrawl não configurado' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const normalizedNumero = numero.replace(/\D/g, '');
+    console.log(`Debug: Normalized number to ${normalizedNumero}`);
+
+    // Initialize Supabase Client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Get API Key from configurations
+    let query = supabase.from('api_configurations').select('escavador_api_key, escavador_endpoint');
+    if (user_id) {
+      query = query.eq('user_id', user_id);
+    }
+    
+    let { data: config, error: configError } = await query.maybeSingle();
+
+    // Fallback: If no config for this user, try to get the first available config (for testing/single user setups)
+    if (!config && !configError) {
+      console.log('No config for specific user_id, trying fallback to first config');
+      const { data: fallbackData } = await supabase.from('api_configurations').select('escavador_api_key, escavador_endpoint').limit(1).maybeSingle();
+      config = fallbackData;
     }
 
-    // Step 1: Scrape Escavador search page to find the process link
-    const escavadorSearchUrl = `https://www.escavador.com/busca?q=${encodeURIComponent(numero)}&qo=relevancia`;
-    console.log('Step 1: Scraping search page:', escavadorSearchUrl);
-
-    const searchScrape = await firecrawlScrape(apiKey, escavadorSearchUrl, ['markdown', 'links']);
-
-    if (!searchScrape.ok) {
-      console.error('Search scrape failed, trying web search fallback');
-      return await tryWebSearch(apiKey, numero);
+    if (!config?.escavador_api_key) {
+      console.error('API Key not found in DB');
+      return jsonResponse({ success: false, error: 'API Key do Escavador não configurada.' }, 200);
     }
 
-    const searchMarkdown = searchScrape.data?.markdown || '';
-    const searchLinks = searchScrape.data?.links || [];
-    console.log('Search page markdown length:', searchMarkdown.length, 'links:', searchLinks.length);
+    const ESCAVADOR_API_KEY = config.escavador_api_key;
+    const ESCAVADOR_ENDPOINT = config.escavador_endpoint || 'https://api.escavador.com/api/v1';
+    
+    console.log(`Using endpoint: ${ESCAVADOR_ENDPOINT}`);
+    console.log(`Using API Key (length: ${ESCAVADOR_API_KEY.length})`);
 
-    // Step 2: Find the actual process page URL from the links
-    const processUrl = findProcessUrl(searchLinks, numero);
+    const isV2 = ESCAVADOR_ENDPOINT.includes('/v2');
+    let url = '';
+    let fetchOptions: any = {
+      headers: {
+        'Authorization': `Bearer ${ESCAVADOR_API_KEY}`,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      }
+    };
 
-    if (processUrl) {
-      console.log('Step 2: Found process URL, scraping:', processUrl);
-      const processScrape = await firecrawlScrape(apiKey, processUrl, ['markdown']);
+    if (isV2) {
+      // V2 Search: API uses /processos/numero_cnj/{numero}
+      // We'll try with the raw number first as CNJ format is standard
+      url = `${ESCAVADOR_ENDPOINT}/processos/numero_cnj/${encodeURIComponent(numero)}`;
+      fetchOptions.method = 'GET';
+      console.log(`Querying Escavador V2 (GET): ${url}`);
+    } else {
+      // V1 Search by Number Pattern (POST)
+      url = `${ESCAVADOR_ENDPOINT}/processo-tribunal/${numero}/async`;
+      fetchOptions.method = 'POST';
+      fetchOptions.body = JSON.stringify({
+        send_callback: 0,
+        wait: 1 
+      });
+      console.log(`Querying Escavador V1 (POST): ${url}`);
+    }
+    
+    const response = await fetch(url, fetchOptions);
+    const responseHeaders = Object.fromEntries(response.headers.entries());
+    const responseText = await response.text();
+    console.log(`Escavador API Call: ${url}`);
+    console.log(`Escavador Status: ${response.status}`);
+    console.log(`Escavador Headers:`, JSON.stringify(responseHeaders));
+    console.log(`Escavador Raw Response:`, responseText);
 
-      if (processScrape.ok && processScrape.data?.markdown?.length > 100) {
-        const parsed = parseProcessPage(processScrape.data.markdown, processUrl, numero);
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      console.error('Failed to parse response as JSON');
+      return jsonResponse({ success: false, error: 'Resposta inválida do Escavador', raw: responseText.substring(0, 200) }, 200);
+    }
+
+    if (!response.ok) {
+      console.error('Escavador API error:', data);
+      return jsonResponse({ 
+        success: false, 
+        error: data.error || data.message || `Erro ${response.status} na API`,
+        details: data
+      }, 200); // Return 200 so invoke doesn't throw, but success is false
+    }
+
+    // Process result
+    if (isV2) {
+      // V2 return structure usually wraps the process in a 'resposta' object or returns it directly
+      const resultData = data.resposta || data;
+      console.log('Result Data Keys:', Object.keys(resultData).join(', '));
+      // Log more if it is a process object
+      const proc = resultData.processo || resultData;
+      console.log('Process Keys:', Object.keys(proc).join(', '));
+      console.log('Result Data extracted:', JSON.stringify(resultData).substring(0, 2000));
+
+      if (resultData && (resultData.id || resultData.processo || resultData.numero_cnj)) {
+        const parsed = parseEscavadorResponseV2(resultData, numero);
         return jsonResponse({ success: true, encontrado: true, dados: parsed });
+      }
+    } else {
+      // V1 return status/resposta
+      if (data.status === 'SUCESSO' && data.resposta) {
+        const parsed = parseEscavadorResponseV1(data.resposta, numero);
+        return jsonResponse({ success: true, encontrado: true, dados: parsed });
+      } else if (data.status === 'PENDENTE' || data.status === 'PROCESSANDO') {
+        return jsonResponse({ 
+          success: true, 
+          encontrado: true, 
+          status: 'processando',
+          mensagem: 'A busca está em andamento nos tribunais.',
+          link_api: data.link_api
+        });
       }
     }
 
-    // Step 3: If no process URL found or scrape failed, parse search page itself
-    if (searchMarkdown.length > 50) {
-      console.log('Step 3: Parsing search page directly');
-      const parsed = parseSearchPage(searchMarkdown, searchLinks, numero);
-      
-      // Check if we got any useful data
-      if (parsed.tribunal || parsed.partes.length > 0 || parsed.resumo) {
-        return jsonResponse({ success: true, encontrado: true, dados: parsed });
-      }
-    }
-
-    // Step 4: Fallback to web search
-    console.log('Step 4: Falling back to web search');
-    return await tryWebSearch(apiKey, numero);
+    return jsonResponse({ success: true, encontrado: false, mensagem: 'Processo não encontrado.' });
 
   } catch (error) {
     console.error('Error:', error);
-    return new Response(
-      JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return jsonResponse({ success: false, error: error instanceof Error ? error.message : 'Erro interno' }, 500);
   }
 });
 
-function jsonResponse(data: Record<string, unknown>, status = 200) {
+function jsonResponse(data: any, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 }
 
-async function firecrawlScrape(apiKey: string, url: string, formats: string[]) {
-  try {
-    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ url, formats, waitFor: 3000 }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      console.error('Firecrawl error:', data);
-      return { ok: false, data: null };
-    }
-
-    return { ok: true, data: data.data || data };
-  } catch (err) {
-    console.error('Firecrawl fetch error:', err);
-    return { ok: false, data: null };
-  }
-}
-
-function findProcessUrl(links: string[], numero: string): string | null {
-  // Look for direct process page links on Escavador
-  const processLinks = links.filter((l: string) =>
-    l.includes('escavador.com/processos') && !l.includes('/busca')
-  );
-
-  if (processLinks.length > 0) {
-    return processLinks[0];
-  }
-
-  // Look for links containing the process number pattern
-  const numeroClean = numero.replace(/[.\-]/g, '');
-  for (const link of links) {
-    if (link.includes(numeroClean) && link.includes('escavador.com')) {
-      return link;
-    }
-  }
-
-  return null;
-}
-
-function parseProcessPage(markdown: string, url: string, numero: string) {
+function parseEscavadorResponseV1(resposta: any, numero: string) {
+  const item = resposta.processo || resposta;
+  
   const dados: Record<string, any> = {
     numero,
-    fontes: [{ url, titulo: 'Escavador - Página do Processo' }],
+    fontes: [] as any[],
     partes: [] as string[],
-    tribunal: null,
-    orgao_julgador: null,
-    classe: null,
-    assunto: null,
-    resumo: null,
+    tribunal: item.tribunal?.nome || item.unidade_judiciaria?.tribunal?.nome || null,
+    orgao_julgador: item.unidade_judiciaria?.nome || null,
+    classe: item.classe || null,
+    assunto: item.assunto?.nome || null,
+    data_publicacao: item.data_distribuicao || item.data_inicio || null,
+    resumo: item.titulo || null,
   };
 
-  // Tribunal
-  const tribunalMatch = markdown.match(/Tribunal\s+Regional\s+Federal\s+da\s+\d+[ªa]?\s*Região/i)
-    || markdown.match(/(?:TRF\s*\d+[ªa]?\s*Região|TRF\d|STF|STJ|TST|TJ[A-Z]{2})/i);
-  if (tribunalMatch) dados.tribunal = tribunalMatch[0].trim();
+  if (item.url) {
+    dados.fontes.push({ url: item.url, titulo: 'Link Oficial' });
+  }
 
-  // Órgão julgador
-  const orgaoMatch = markdown.match(/(?:Órgão\s+[Jj]ulgador|Vara|Juízo)[:\s]*([^\n]{3,80})/i)
-    || markdown.match(/(?:Ju[ií]zo\s+Federal\s+da?\s+\d+[ªa]?\s*Vara[^\n,.)]{0,30})/i)
-    || markdown.match(/(?:\d+[ªa]?\s*(?:Vara|Turma|Câmara|Seção)[^\n,.)]{0,40})/i);
-  if (orgaoMatch) dados.orgao_julgador = (orgaoMatch[1] || orgaoMatch[0]).trim();
-
-  // Classe
-  const classeMatch = markdown.match(/(?:Classe|Tipo\s+processual|Classe\s+processual)[:\s]*([^\n]{3,60})/i);
-  if (classeMatch) dados.classe = classeMatch[1].trim();
-
-  // Assunto
-  const assuntoMatch = markdown.match(/(?:Assunto|Matéria|Assuntos?)[:\s]*([^\n]{3,100})/i);
-  if (assuntoMatch) dados.assunto = assuntoMatch[1].trim();
-
-  // Partes - multiple patterns
-  const partesSection = markdown.match(/(?:Partes|Polo\s+Ativo|Polo\s+Passivo|Partes\s+do\s+Processo)[\s\S]{0,500}/i);
-  if (partesSection) {
-    const names = partesSection[0].matchAll(/\[([^\]]{3,80})\]/g);
-    for (const m of names) {
-      const name = m[1].trim();
-      if (name && !dados.partes.includes(name) && !name.startsWith('http') && !isUiElement(name)) {
-        dados.partes.push(name);
-      }
+  // Extract involved parties
+  const envolvidos = item.envolvidos || [];
+  envolvidos.forEach((env: any) => {
+    if (env.nome) {
+      let label = env.nome;
+      if (env.tipo_original) label += ` (${env.tipo_original})`;
+      dados.partes.push(label);
     }
-  }
-
-  const partesPatterns = [
-    /(?:Autor|Réu|Requerente|Requerido|Exequente|Executado|Apelante|Apelado|Beneficiário|Impetrante|Impetrado)[:\s]+([^\n]{3,80})/gi,
-  ];
-  for (const pattern of partesPatterns) {
-    let match;
-    while ((match = pattern.exec(markdown)) !== null) {
-      const name = match[1].trim().replace(/\*\*/g, '').replace(/\[|\]/g, '').replace(/\(.*?\)/g, '').trim();
-      if (name && !dados.partes.includes(name) && name.length > 2 && !isUiElement(name)) {
-        dados.partes.push(name);
-      }
-    }
-  }
-
-  // Also try "partes envolvidas" pattern
-  const partesEnvolvidas = markdown.match(/partes?\s+envolvidas?\s+(.+?)(?:\.\s|$)/i);
-  if (partesEnvolvidas) {
-    const nameMatches = partesEnvolvidas[1].matchAll(/\[([^\]]+)\]/g);
-    for (const m of nameMatches) {
-      const name = m[1].trim();
-      if (name && !dados.partes.includes(name) && name.length > 2 && !name.startsWith('http') && !isUiElement(name)) {
-        dados.partes.push(name);
-      }
-    }
-  }
-
-  // Data
-  const dateMatch = markdown.match(/(?:Distribuído\s+em|Data\s+de\s+distribuição|em)\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i)
-    || markdown.match(/(?:em|desde)\s+(\d{1,2}\s+de\s+\w+\s+de\s+\d{4})/i);
-  if (dateMatch) dados.data_publicacao = dateMatch[1];
-
-  // Valor
-  const valorMatch = markdown.match(/(?:Valor\s+da\s+causa|Valor)[:\s]*R\$\s*([\d.,]+)/i);
-  if (valorMatch) dados.valor_causa = valorMatch[1];
-
-  // Build resumo from clean content
-  const cleanContent = markdown
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\*\*/g, '')
-    .replace(/#{1,6}\s+/g, '')
-    .replace(/\\{2,}/g, '')
-    .split('\n')
-    .filter(line => line.trim().length > 10 && !isUiLine(line))
-    .slice(0, 8)
-    .join('\n')
-    .trim();
-
-  if (cleanContent.length > 20) {
-    dados.resumo = cleanContent.substring(0, 600);
-    if (cleanContent.length > 600) dados.resumo += '…';
-  }
-
-  return dados;
-}
-
-function parseSearchPage(markdown: string, links: string[], numero: string) {
-  const dados: Record<string, any> = {
-    numero,
-    fontes: [] as { url: string; titulo: string }[],
-    partes: [] as string[],
-    tribunal: null,
-    orgao_julgador: null,
-    classe: null,
-    assunto: null,
-    resumo: null,
-  };
-
-  // Extract process-specific links
-  const processLinks = links.filter((l: string) =>
-    l.includes('escavador.com/processos') || l.includes('escavador.com/diarios')
-  );
-  for (const link of processLinks.slice(0, 5)) {
-    dados.fontes.push({ url: link, titulo: 'Escavador' });
-  }
-
-  // Tribunal
-  const tribunalMatch = markdown.match(/Tribunal\s+Regional\s+Federal\s+da\s+\d+[ªa]?\s*Região/i)
-    || markdown.match(/(?:TRF\s*\d+[ªa]?\s*Região|TRF\d|STF|STJ|TST|TJ[A-Z]{2})/i);
-  if (tribunalMatch) dados.tribunal = tribunalMatch[0].trim();
-
-  // Órgão julgador
-  const orgaoMatch = markdown.match(/(?:Ju[ií]zo\s+Federal\s+da?\s+\d+[ªa]?\s*Vara[^\n,.)]{0,30})/i)
-    || markdown.match(/(?:\d+[ªa]?\s*(?:Vara|Turma|Câmara|Seção)[^\n,.)]{0,40})/i);
-  if (orgaoMatch) dados.orgao_julgador = orgaoMatch[0].trim();
-
-  // Classe
-  const classeMatch = markdown.match(/(?:Classe|Tipo\s+processual)[:\s]*([^\n]{3,60})/i);
-  if (classeMatch) dados.classe = classeMatch[1].trim();
-
-  // Partes envolvidas
-  const partesEnvolvidas = markdown.match(/partes?\s+envolvidas?\s+(.+?)(?:\.\s|$)/i);
-  if (partesEnvolvidas) {
-    const nameMatches = partesEnvolvidas[1].matchAll(/\[([^\]]+)\]/g);
-    for (const m of nameMatches) {
-      const name = m[1].trim();
-      if (name && !dados.partes.includes(name) && name.length > 2 && !name.startsWith('http') && !isUiElement(name)) {
-        dados.partes.push(name);
-      }
-    }
-  }
-
-  // Standard partes patterns
-  const partesPatterns = [
-    /(?:Autor|Réu|Requerente|Requerido|Exequente|Executado|Apelante|Apelado|Beneficiário)[:\s]+([^\n]{3,80})/gi,
-  ];
-  for (const pattern of partesPatterns) {
-    let match;
-    while ((match = pattern.exec(markdown)) !== null) {
-      const name = match[1].trim().replace(/\*\*/g, '').replace(/\[|\]/g, '');
-      if (name && !dados.partes.includes(name) && name.length > 2 && !isUiElement(name)) {
-        dados.partes.push(name);
-      }
-    }
-  }
-
-  // Resumo from context
-  const contextMatch = markdown.match(/Tem como partes envolvidas\s+(.+?)(?:\.\s|e outros)/is);
-  if (contextMatch) {
-    const raw = contextMatch[1]
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/\*\*/g, '')
-      .replace(/\n/g, ' ')
-      .trim();
-    dados.resumo = `Partes envolvidas: ${raw}`;
-  }
-
-  // Date
-  const dateMatch = markdown.match(/(?:em|desde)\s+(\d{1,2}\s+de\s+\w+\s+de\s+\d{4})/i);
-  if (dateMatch) dados.data_publicacao = dateMatch[1];
-
-  return dados;
-}
-
-async function tryWebSearch(apiKey: string, numero: string) {
-  console.log('Web search fallback for:', numero);
-
-  const response = await fetch('https://api.firecrawl.dev/v1/search', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      query: `site:escavador.com "${numero}"`,
-      limit: 5,
-      scrapeOptions: { formats: ['markdown'] },
-    }),
   });
 
-  const searchData = await response.json();
-
-  if (!response.ok) {
-    console.error('Web search failed:', searchData);
-    return jsonResponse({ success: false, error: searchData.error || 'Falha na busca' }, response.status);
-  }
-
-  const results = searchData.data || [];
-  console.log(`Web search found ${results.length} results`);
-
-  if (results.length === 0) {
-    return jsonResponse({ success: true, encontrado: false, dados: null, mensagem: 'Nenhum resultado encontrado' });
-  }
-
-  // If we got a result with markdown, parse the best one
-  const bestResult = results.find((r: any) => r.markdown && r.markdown.length > 100) || results[0];
-
-  if (bestResult?.markdown) {
-    const parsed = parseProcessPage(bestResult.markdown, bestResult.url || '', numero);
-    // Add all result URLs as sources
-    parsed.fontes = results
-      .filter((r: any) => r.url)
-      .map((r: any) => ({ url: r.url, titulo: r.title || 'Escavador' }));
-    return jsonResponse({ success: true, encontrado: true, dados: parsed });
-  }
-
-  return jsonResponse({ success: true, encontrado: false, dados: null, mensagem: 'Nenhum resultado encontrado' });
+  return dados;
 }
 
-function isUiElement(text: string): boolean {
-  const uiTerms = ['Fechar', 'Entrar', 'menu', 'Cadastre', 'Login', 'Buscar', 'Pesquisar', 'Ver mais', 'Saiba mais', 'Termos', 'Privacidade', 'Cookie', 'Solicitar', 'Polo Ativo', 'Polo Passivo', 'Exibir', 'Compartilhar', 'sem internet'];
-  return uiTerms.some(term => text.toLowerCase().includes(term.toLowerCase())) || /^[—\-\s\\]+/.test(text);
-}
+function parseEscavadorResponseV2(data: any, numero: string) {
+  const processo = data.processo || data;
+  const fontes = processo.fontes || [];
+  
+  const toString = (val: any) => {
+    if (!val) return null;
+    if (typeof val === 'string') return val.trim() || null;
+    if (typeof val === 'object') {
+      // Prioritized keys for labels
+      const priorityKeys = ['nome', 'descricao', 'titulo', 'valor', 'texto', 'designacao', 'sigla'];
+      for (const key of priorityKeys) {
+        if (val[key] && typeof val[key] === 'string' && val[key].trim()) {
+          return val[key].trim();
+        }
+      }
+      // If no priority key, check any string property
+      for (const key in val) {
+        if (typeof val[key] === 'string' && val[key].trim().length > 2) {
+          return val[key].trim();
+        }
+      }
+      return null;
+    }
+    return String(val);
+  };
 
-function isUiLine(line: string): boolean {
-  const trimmed = line.trim();
-  if (trimmed.length < 5) return true;
-  return isUiElement(trimmed) || /^(Escavador|©|Todos os direitos|Siga-nos)/i.test(trimmed);
+  // Aggressive nested field extraction from root and all sources
+  let tribunal = toString(processo.tribunal);
+  let orgao_julgador = toString(processo.unidade_judiciaria) || toString(processo.unidade_origem);
+  let classe = toString(processo.classe) || toString(processo.classe_natureza) || toString(processo.classe_cnj) || toString(processo.natureza);
+  let assunto = toString(processo.assunto_principal) || toString(processo.assunto_principal_cnj);
+  let area = toString(processo.area);
+  let valor_causa = toString(processo.valor_da_causa);
+  
+  // Fallbacks using all Fontes
+  fontes.forEach((f: any) => {
+    if (!tribunal) tribunal = toString(f.tribunal) || toString(f.nome);
+    if (!orgao_julgador) orgao_julgador = toString(f.unidade_judiciaria) || toString(f.unidade_origem) || toString(f.orgao_julgador);
+    if (!classe) classe = toString(f.classe) || toString(f.classe_natureza) || toString(f.classe_cnj) || toString(f.natureza);
+    if (!assunto) {
+      const assuntos = f.assuntos || [];
+      if (assuntos.length > 0) assunto = toString(assuntos[0]);
+      if (!assunto) assunto = toString(f.assunto_principal) || toString(f.assunto_principal_cnj);
+    }
+    if (!area) area = toString(f.area);
+    if (!valor_causa) valor_causa = toString(f.valor_da_causa);
+  });
+
+  // Try to parse Classe and Assunto from title if still null
+  // Title pattern: "Procedimento Especial - Assunto X" or similar
+  const titulo = toString(processo.titulo);
+  if (titulo) {
+    if (!classe) {
+      const classeMatch = titulo.match(/^([^:-]+)/);
+      if (classeMatch) classe = classeMatch[1].trim();
+    }
+    if (!assunto && titulo.includes('Assunto:')) {
+      const assuntoMatch = titulo.match(/Assunto:\s*([^;]+)/i);
+      if (assuntoMatch) assunto = assuntoMatch[1].trim();
+    }
+  }
+
+  const data_pub = processo.data_ultima_movimentacao || processo.distribuido_em || (fontes.length > 0 ? fontes[0].data_inicio : null);
+
+  // Identification of Applicant and Document
+  let cpf_identificado: string | null = null;
+  let nome_identificado: string | null = null;
+  
+  // Collect all envolvidos from root and all fontes
+  const allEnvolvidos: any[] = [...(processo.envolvidos || [])];
+  fontes.forEach((f: any) => {
+    if (f.envolvidos && Array.isArray(f.envolvidos)) {
+      allEnvolvidos.push(...f.envolvidos);
+    }
+  });
+
+  // Unique list of parties formatted with documents and roles
+  const partesFormatadas: string[] = [];
+  const seenParties = new Set<string>();
+
+  allEnvolvidos.forEach((env: any) => {
+    const nome = toString(env);
+    if (nome && !seenParties.has(nome)) {
+      seenParties.add(nome);
+      let label = nome;
+      const doc = env.documento || env.cpf || env.cnpj;
+      if (doc) label += ` [CPF/CNPJ: ${doc}]`;
+      const tipo = env.tipo_original || env.tipo || env.tipo_identificado;
+      if (tipo) label += ` (${tipo})`;
+      partesFormatadas.push(label);
+
+      // Identification logic (Plan A: Requerente)
+      if (!cpf_identificado) {
+        const isRequerente = (env.tipo_polo === 'ATIVO' || 
+                             ['REQUERENTE', 'AUTOR', 'EXEQUENTE'].includes(String(tipo).toUpperCase()));
+        if (isRequerente && doc) {
+          cpf_identificado = doc;
+          nome_identificado = nome;
+        }
+      }
+    }
+  });
+
+  // Unique list of magistrates (juizes)
+  const magistrados: string[] = [];
+  allEnvolvidos.forEach((env: any) => {
+    const tipo = String(env.tipo_original || env.tipo || '').toUpperCase();
+    if (tipo.includes('JUIZ') || tipo.includes('MAGISTRADO') || tipo.includes('RELATOR')) {
+      const nome = toString(env);
+      if (nome && !magistrados.includes(nome)) magistrados.push(nome);
+    }
+  });
+
+  // Plan B: Lawyer/Adv fallback if no Requerente document found
+  if (!cpf_identificado) {
+    const adv = allEnvolvidos.find((e: any) => {
+      const tipo = String(e.tipo || e.tipo_original || '').toLowerCase();
+      return tipo.includes('advogado') && (e.documento || e.cpf || e.cnpj);
+    });
+    if (adv) {
+      cpf_identificado = `ADV: ${adv.documento || adv.cpf || adv.cnpj}`;
+      nome_identificado = toString(adv);
+    }
+  }
+
+  // Fallback parsing from 'partes' string array
+  const listagemPartesRoot = (processo.partes || []).map((p: any) => typeof p === 'string' ? p : toString(p));
+  if (!cpf_identificado || !nome_identificado) {
+    const docRegex = /(\d{11,14})/;
+    for (const p of listagemPartesRoot) {
+      if (!p) continue;
+      const match = p.match(docRegex);
+      if (match && !cpf_identificado) {
+        if (p.toUpperCase().includes('REQUERENTE') || p.toUpperCase().includes('AUTOR')) {
+          cpf_identificado = match[1];
+        } else if (p.toUpperCase().includes('ADVOGADO')) {
+          cpf_identificado = `ADV: ${match[1]}`;
+        }
+      }
+      if (!nome_identificado && (p.toUpperCase().includes('REQUERENTE') || p.toUpperCase().includes('AUTOR'))) {
+        nome_identificado = p.split('[')[0].split('(')[0].trim();
+      }
+    }
+  }
+
+  const result: Record<string, any> = {
+    numero,
+    encontrado: true,
+    fontes: [] as any[],
+    partes: partesFormatadas.length > 0 ? partesFormatadas : listagemPartesRoot.filter(Boolean),
+    magistrados,
+    tribunal,
+    orgao_julgador,
+    classe,
+    assunto,
+    area,
+    valor_causa,
+    data_publicacao: data_pub,
+    resumo: processo.titulo || null,
+    cpf_identificado,
+    nome_identificado,
+    raw_debug_keys: Object.keys(processo),
+  };
+
+  fontes.forEach((f: any) => {
+    if (f.url || f.link) {
+      result.fontes.push({ 
+        url: f.url || f.link, 
+        titulo: f.nome || f.descricao || 'Fonte Escavador' 
+      });
+    }
+  });
+
+  return result;
 }

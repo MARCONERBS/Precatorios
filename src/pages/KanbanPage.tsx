@@ -58,7 +58,7 @@ export default function KanbanPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("precatorios")
-        .select("id, numero, valor, nome_titular, kanban_column_id")
+        .select("id, numero, valor, nome_titular, cpf, kanban_column_id")
         .eq("kanban_board_id", activeBoardId)
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -318,6 +318,21 @@ export default function KanbanPage() {
                       </p>
                       {card.nome_titular && (
                         <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mt-2">{card.nome_titular}</p>
+                      )}
+                      
+                      {card.cpf && (
+                        <p className="text-[10px] font-mono text-primary mt-1 flex items-center gap-1">
+                          <span className="opacity-50 text-[9px] font-bold uppercase">
+                            {card.cpf.startsWith('ADV:') 
+                              ? "ADV:" 
+                              : card.cpf.length === 11 
+                                ? "CPF:" 
+                                : card.cpf.length === 14 
+                                  ? "CNPJ:" 
+                                  : "ID:"}
+                          </span>
+                          {card.cpf.replace('ADV:', '').trim()}
+                        </p>
                       )}
                       
                       {boards && boards.length > 1 && (

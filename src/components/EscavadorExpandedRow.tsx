@@ -31,16 +31,100 @@ export function EscavadorCell({ item, isExpanded, onToggle }: EscavadorProps) {
 
     setLoading(true);
     try {
+      // Get current user for auth context if needed by the edge function
+      const { data: { user } } = await supabase.auth.getUser();
+      
       const { data, error } = await supabase.functions.invoke("consultar-escavador", {
-        body: { numero: item.numero },
+        body: { 
+          numero: item.numero,
+          user_id: user?.id 
+        },
       });
 
       if (error) throw error;
 
       if (data?.success && data?.dados) {
-        await supabase.from("precatorios").update({ escavador_dados: data.dados }).eq("id", item.id);
+        const escavadorDados = data.dados;
+        const updateData: any = { escavador_dados: escavadorDados };
+
+        // Use pre-identified applicant if available
+        if (escavadorDados.cpf_identificado) {
+          updateData.cpf = escavadorDados.cpf_identificado;
+          updateData.nome_titular = escavadorDados.nome_identificado || null;
+        }
+
+        // Search in partes if not found or to supplement
+        if (!updateData.cpf && escavadorDados.partes && escavadorDados.partes.length > 0) {
+          // Look for candidates that don't look like lawyers or government entities
+          const candidates = escavadorDados.partes.filter((p: string) => {
+            const low = p.toLowerCase();
+            return !low.includes('(advogado)') && 
+                   !low.includes('uniao federal') && 
+                   !low.includes('fazenda') && 
+                   !low.includes('instituto') &&
+                   !low.includes('caixa economica') &&
+                   !low.includes('ministerio');
+          });
+          
+          if (candidates.length > 0) {
+            // Priority to "beneficiario", "autor", "exequente", "requerente"
+            const prioritized = candidates.find((p: string) => {
+              const low = p.toLowerCase();
+              return low.includes('beneficiário') || low.includes('autor') || low.includes('exequente') || low.includes('requerente');
+            }) || candidates[0];
+
+            // Extract Name (everything before the first '[' or '(')
+            const nameMatch = prioritized.match(/^([^[(]+)/);
+            if (nameMatch && !updateData.nome_titular) {
+              updateData.nome_titular = nameMatch[1].trim();
+            }
+
+            // Extract CPF/CNPJ from [CPF/CNPJ: ...] or standard patterns
+            const cpfMatch = prioritized.match(/\[CPF\/CNPJ:\s*([\d.-]+)\]/) || prioritized.match(/(?:\d{3}\.\d{3}\.\d{3}-\d{2})/) || prioritized.match(/CPF:\s*(\d+)/);
+            if (cpfMatch && !updateData.cpf) {
+              updateData.cpf = cpfMatch[1] || cpfMatch[0];
+            }
+          }
+        }
+
+        // Clean CPF if it has symbols but keep ADV prefix
+        if (updateData.cpf) {
+          const isAdv = updateData.cpf.startsWith('ADV:');
+          const numbers = updateData.cpf.replace(/[^\d]/g, '');
+          updateData.cpf = isAdv ? `ADV: ${numbers}` : numbers;
+          updateData.status = "cpf_encontrado"; // Update status if we found data
+
+          // Plan C: Move to Kanban Column "CPF Encontrado" if it exists in the same board
+          if (item.id) {
+            // Get current board ID first
+            const { data: precat } = await supabase.from("precatorios").select("kanban_board_id").eq("id", item.id).single();
+            if (precat?.kanban_board_id) {
+              const { data: cols } = await supabase.from("kanban_columns")
+                .select("id")
+                .eq("board_id", precat.kanban_board_id)
+                .ilike("title", "%CPF Encontrado%")
+                .single();
+              
+              if (cols?.id) {
+                updateData.kanban_column_id = cols.id;
+              }
+            }
+          }
+        }
+
+        await supabase.from("precatorios").update(updateData).eq("id", item.id);
         await queryClient.invalidateQueries({ queryKey: ["precatorios"] });
+        await queryClient.invalidateQueries({ queryKey: ["precatorios-kanban"] }); // Also refresh Kanban
         onToggle(item.id);
+        
+        if (updateData.nome_titular) {
+          toast({ title: "Dados atualizados", description: `Titular identificado: ${updateData.nome_titular}` });
+        }
+      } else if (data?.status === 'processando') {
+        toast({ 
+          title: "Consulta em andamento", 
+          description: data.mensagem || "O Escavador está buscando os dados. Tente novamente em 1 minuto.",
+        });
       } else if (data?.encontrado === false) {
         await supabase.from("precatorios").update({ escavador_dados: { encontrado: false } }).eq("id", item.id);
         await queryClient.invalidateQueries({ queryKey: ["precatorios"] });
@@ -64,7 +148,17 @@ export function EscavadorCell({ item, isExpanded, onToggle }: EscavadorProps) {
   );
 }
 
-function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; value: any }) {
+  let displayValue = value;
+  if (typeof value === 'object') {
+    displayValue = value?.nome || value?.descricao || null;
+  }
+  
+  // Final safety: if it looks like a JSON string, hide it
+  if (typeof displayValue === 'string' && (displayValue.startsWith('{') || displayValue.startsWith('['))) {
+    displayValue = null;
+  }
+
   return (
     <div className="flex items-start gap-2.5 p-3 rounded-none bg-background border-2 border-border shadow-[2px_2px_0_0_rgba(17,17,17,1)]">
       <div className="mt-0.5 flex-shrink-0 h-7 w-7 rounded-none border-2 border-primary bg-primary/10 flex items-center justify-center">
@@ -72,7 +166,7 @@ function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; valu
       </div>
       <div className="min-w-0">
         <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
-        <p className="text-sm text-foreground mt-0.5 leading-snug">{value}</p>
+        <p className="text-sm text-foreground mt-0.5 leading-snug">{displayValue || '-'}</p>
       </div>
     </div>
   );
@@ -124,24 +218,56 @@ export function EscavadorExpandedContent({ item }: { item: { escavador_dados: an
   return (
     <td colSpan={7} className="p-0">
       <div className="px-6 py-5 space-y-4 bg-muted/20 border-t border-border/40">
+        {/* Status and Identity Highlight */}
+        {(dados.nome_identificado || dados.cpf_identificado) && (
+          <div className="p-4 bg-green-500/10 border-2 border-green-500/30 shadow-[4px_4px_0_0_rgba(34,197,94,0.2)]">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="h-4 w-4 text-green-600" />
+              <span className="text-xs font-bold text-green-700 uppercase tracking-widest">Titular Identificado</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] font-medium text-green-600/70 uppercase">Nome</p>
+                <p className="text-sm font-bold text-green-900">{dados.nome_identificado || '-'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium text-green-600/70 uppercase">CPF/CNPJ Identificado</p>
+                <p className="text-sm font-bold text-green-900 font-mono">{dados.cpf_identificado || '-'}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Info cards grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {dados.tribunal && (
-            <InfoCard icon={Building2} label="Tribunal" value={dados.tribunal} />
-          )}
-          {dados.orgao_julgador && (
-            <InfoCard icon={Gavel} label="Órgão Julgador" value={dados.orgao_julgador} />
-          )}
-          {dados.assunto && (
-            <InfoCard icon={Scale} label="Assunto" value={dados.assunto} />
-          )}
-          {dados.data_publicacao && (
-            <InfoCard icon={Calendar} label="Data" value={dados.data_publicacao} />
-          )}
-          {dados.classe && (
-            <InfoCard icon={Scale} label="Classe" value={dados.classe} />
-          )}
+          <InfoCard icon={Building2} label="Tribunal" value={dados.tribunal} />
+          <InfoCard icon={Gavel} label="Órgão Julgador" value={dados.orgao_julgador} />
+          <InfoCard icon={Scale} label="Classe" value={dados.classe} />
+          <InfoCard icon={Calendar} label="Data" value={dados.data_publicacao} />
+          <InfoCard icon={Scale} label="Assunto" value={dados.assunto} />
+          {dados.area && <InfoCard icon={Scale} label="Área" value={dados.area} />}
+          {dados.valor_causa && <InfoCard icon={Scale} label="Valor da Causa" value={dados.valor_causa} />}
         </div>
+
+        {/* Magistrados */}
+        {dados.magistrados && dados.magistrados.length > 0 && (
+          <div>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Gavel className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Magistrados / Juízes</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {dados.magistrados.map((m: string, i: number) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center px-3 py-1.5 rounded-none text-[10px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-600 border-2 border-amber-200 shadow-[2px_2px_0_0_rgba(17,17,17,1)]"
+                >
+                  {m}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Partes */}
         {cleanPartes.length > 0 && (

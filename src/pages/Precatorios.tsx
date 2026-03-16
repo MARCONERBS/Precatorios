@@ -42,11 +42,18 @@ export default function Precatorios() {
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
-      const { data, error, count } = await supabase
+      let query = supabase
         .from("precatorios")
         .select("*", { count: "exact" })
-        .order(sortField, { ascending: sortDir === "asc" })
-        .range(from, to);
+        .order(sortField, { ascending: sortDir === "asc" });
+
+      // Add stable tie-breakers to prevent rows jumping on updates
+      if (sortField !== "numero") {
+        query = query.order("numero", { ascending: true });
+      }
+      query = query.order("id", { ascending: true });
+
+      const { data, error, count } = await query.range(from, to);
 
       if (error) throw error;
       return { items: data, total: count ?? 0 };
@@ -170,7 +177,7 @@ export default function Precatorios() {
                   onClick={() => toggleSort("ano")}
                 >
                   <span className="inline-flex items-center justify-center gap-1.5 w-full">
-                    Ano <SortIcon field="ano" />
+                    Ano de Inclusão no Orçamento <SortIcon field="ano" />
                   </span>
                 </th>
                 <th
@@ -189,9 +196,9 @@ export default function Precatorios() {
                     Status <SortIcon field="status" />
                   </span>
                 </th>
-                <th className="text-left font-bold text-foreground px-4 py-3 uppercase tracking-widest text-[11px]">CPF</th>
+                <th className="text-left font-bold text-foreground px-4 py-3 uppercase tracking-widest text-[11px]">CPF/CNPJ</th>
                 <th className="text-left font-bold text-foreground px-4 py-3 uppercase tracking-widest text-[11px]">Contato</th>
-                <th className="text-left font-bold text-foreground px-4 py-3 uppercase tracking-widest text-[11px]">Escavador</th>
+                <th className="text-left font-bold text-foreground px-4 py-3 uppercase tracking-widest text-[11px]">Buscar</th>
               </tr>
             </thead>
             <tbody>
@@ -214,15 +221,25 @@ export default function Precatorios() {
                     style={{ height: 44 }}
                   >
                     <td className="px-4 py-2.5 font-mono text-xs text-foreground font-medium">{item.numero}</td>
-                    <td className="px-4 py-2.5 text-center font-mono text-xs text-muted-foreground">{item.ano}</td>
+                    <td className="px-4 py-2.5 text-center font-mono text-[10px] text-muted-foreground leading-tight max-w-[200px]">
+                      INCLUSÃO NO ORÇAMENTO GERAL DA UNIÃO DO EXERCÍCIO DE {item.ano}
+                    </td>
                     <td className="px-4 py-2.5 text-right font-mono text-sm font-bold text-foreground">
                       {formatCurrency(Number(item.valor))}
                     </td>
                     <td className="px-4 py-2.5">
                       <StatusBadge status={statusMap[item.status] || "pendente"} />
                     </td>
-                    <td className="px-4 py-2.5 text-foreground text-xs font-mono font-medium">
-                      {item.cpf || "—"}
+                    <td className="px-4 py-2.5 text-foreground text-[10px] font-mono font-bold">
+                      {item.cpf ? (
+                        item.cpf.startsWith('ADV:')
+                          ? item.cpf 
+                          : item.cpf.length === 11 
+                            ? `CPF: ${item.cpf}` 
+                            : item.cpf.length === 14 
+                              ? `CNPJ: ${item.cpf}` 
+                              : item.cpf
+                      ) : "—"}
                     </td>
                     <td className="px-4 py-2.5 text-foreground text-xs font-mono font-medium">
                       {item.telefones?.length || item.emails?.length ? "📞 📧" : "—"}
