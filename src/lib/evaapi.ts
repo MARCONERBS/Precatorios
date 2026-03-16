@@ -1,5 +1,5 @@
 const API_URL = "https://sender.uazapi.com";
-const ADMIN_TOKEN = "xv1Owe6xk6IceFnWDv0I609XMJflCO9djzHEwJkT43L62s56CL";
+const ADMIN_TOKEN = import.meta.env.VITE_EVA_ADMIN_TOKEN;
 
 export interface InstanceStatus {
   instance: {
