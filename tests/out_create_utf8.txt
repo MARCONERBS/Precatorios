@@ -1,0 +1,4 @@
+﻿Creating instance: EVAAPI_TEST_225
+Status: 200
+{"info":"","instance":{"id":"racd0eeeb603abc","token":"69245e0c-ce11-4c5f-ab15-be7f4f7664a0","status":"disconnected","paircode":"","qrcode":"","name":"EVAAPI_TEST_225","profileName":"","profilePicUrl":"","isBusiness":false,"plataform":"","systemName":"uazapiGO","owner":"","current_presence":"unavailable","lastDisconnect":"","lastDisconnectReason":"","adminField01":"","adminField02":"","openai_apikey":"","chatbot_enabled":false,"chatbot_ignoreGroups":false,"chatbot_stopConversation":"","chatbot_stopMinutes":0,"chatbot_stopWhenYouSendMsg":0,"created":"2026-03-16 04:07:30.278Z","updated":"2026-03-16 04:07:30.278Z","currentTime":"2026-03-16 04:07:30.278Z","msg_delay_min":1,"msg_delay_max":3},"name":"EVAAPI_TEST_225","response":"Instance created successfully","status":{"connected":false,"jid":null,"loggedIn":false},"token":"69245e0c-ce11-4c5f-ab15-be7f4f7664a0"}
+

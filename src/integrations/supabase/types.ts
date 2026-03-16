@@ -85,6 +85,180 @@ export type Database = {
           },
         ]
       }
+      evachat_contacts: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          id: string
+          instance_id: string
+          last_message: string | null
+          last_timestamp: string | null
+          nome: string | null
+          numero: string | null
+          status: string
+          updated_at: string | null
+          user_id: string
+          wa_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          id?: string
+          instance_id: string
+          last_message?: string | null
+          last_timestamp?: string | null
+          nome?: string | null
+          numero?: string | null
+          status?: string
+          updated_at?: string | null
+          user_id: string
+          wa_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          id?: string
+          instance_id?: string
+          last_message?: string | null
+          last_timestamp?: string | null
+          nome?: string | null
+          numero?: string | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string
+          wa_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "evachat_contacts_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "evachat_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      evachat_instances: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          token: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          token: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          token?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      evachat_messages: {
+        Row: {
+          contact_id: string
+          created_at: string | null
+          id: string
+          sender: string
+          text: string
+          timestamp: string | null
+          user_id: string
+          wa_message_id: string | null
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string | null
+          id?: string
+          sender: string
+          text: string
+          timestamp?: string | null
+          user_id: string
+          wa_message_id?: string | null
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string | null
+          id?: string
+          sender?: string
+          text?: string
+          timestamp?: string | null
+          user_id?: string
+          wa_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "evachat_messages_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "evachat_contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kanban_boards: {
+        Row: {
+          created_at: string | null
+          id: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      kanban_columns: {
+        Row: {
+          board_id: string
+          created_at: string | null
+          id: string
+          order_index: number
+          title: string
+        }
+        Insert: {
+          board_id: string
+          created_at?: string | null
+          id?: string
+          order_index?: number
+          title: string
+        }
+        Update: {
+          board_id?: string
+          created_at?: string | null
+          id?: string
+          order_index?: number
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_columns_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       precatorios: {
         Row: {
           ano: number
@@ -94,6 +268,8 @@ export type Database = {
           erro_mensagem: string | null
           escavador_dados: Json | null
           id: string
+          kanban_board_id: string | null
+          kanban_column_id: string | null
           kanban_coluna: string
           nome_titular: string | null
           numero: string
@@ -111,6 +287,8 @@ export type Database = {
           erro_mensagem?: string | null
           escavador_dados?: Json | null
           id?: string
+          kanban_board_id?: string | null
+          kanban_column_id?: string | null
           kanban_coluna?: string
           nome_titular?: string | null
           numero: string
@@ -128,6 +306,8 @@ export type Database = {
           erro_mensagem?: string | null
           escavador_dados?: Json | null
           id?: string
+          kanban_board_id?: string | null
+          kanban_column_id?: string | null
           kanban_coluna?: string
           nome_titular?: string | null
           numero?: string
@@ -137,7 +317,22 @@ export type Database = {
           user_id?: string
           valor?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "precatorios_kanban_board_id_fkey"
+            columns: ["kanban_board_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_boards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "precatorios_kanban_column_id_fkey"
+            columns: ["kanban_column_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_columns"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

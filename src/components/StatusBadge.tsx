@@ -20,7 +20,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium",
+        "inline-flex items-center px-2 py-1 rounded-none border-2 border-border shadow-[2px_2px_0_0_rgba(17,17,17,1)] text-[10px] font-bold uppercase tracking-widest",
         config.className,
         className
       )}

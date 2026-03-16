@@ -135,8 +135,8 @@ export default function Precatorios() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Precatórios</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="text-2xl font-bold uppercase tracking-tight text-foreground">Precatórios</h1>
+          <p className="text-sm font-mono text-muted-foreground mt-1">
             {totalCount > 0 ? `${totalCount.toLocaleString("pt-BR")} precatórios` : `Precatórios Federais de ${currentYear}`}
           </p>
         </div>
@@ -147,18 +147,18 @@ export default function Precatorios() {
           </Button>
           <Button size="sm" className="gap-2" onClick={handleSync} disabled={syncing}>
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} strokeWidth={1.5} />
-            {syncing ? "Sincronizando..." : `Sincronizar ${currentYear}`}
+            {syncing ? "Sincronizando..." : "Sincronizar"}
           </Button>
         </div>
       </div>
 
-      <div className="bg-card rounded-lg shadow-card overflow-hidden">
+      <div className="bg-card rounded-none border-2 border-border shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border">
+              <tr className="border-b-2 border-border bg-muted/20">
                 <th
-                  className="text-left font-medium text-muted-foreground px-4 py-3 cursor-pointer select-none hover:text-foreground transition-colors"
+                  className="text-left font-bold text-foreground px-4 py-3 cursor-pointer select-none hover:bg-accent/50 transition-colors uppercase tracking-widest text-[11px]"
                   onClick={() => toggleSort("numero")}
                 >
                   <span className="inline-flex items-center gap-1.5">
@@ -166,15 +166,15 @@ export default function Precatorios() {
                   </span>
                 </th>
                 <th
-                  className="text-center font-medium text-muted-foreground px-4 py-3 cursor-pointer select-none hover:text-foreground transition-colors"
+                  className="text-center font-bold text-foreground px-4 py-3 cursor-pointer select-none hover:bg-accent/50 transition-colors uppercase tracking-widest text-[11px]"
                   onClick={() => toggleSort("ano")}
                 >
-                  <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex items-center justify-center gap-1.5 w-full">
                     Ano <SortIcon field="ano" />
                   </span>
                 </th>
                 <th
-                  className="text-right font-medium text-muted-foreground px-4 py-3 cursor-pointer select-none hover:text-foreground transition-colors"
+                  className="text-right font-bold text-foreground px-4 py-3 cursor-pointer select-none hover:bg-accent/50 transition-colors uppercase tracking-widest text-[11px]"
                   onClick={() => toggleSort("valor")}
                 >
                   <span className="inline-flex items-center justify-end gap-1.5">
@@ -182,16 +182,16 @@ export default function Precatorios() {
                   </span>
                 </th>
                 <th
-                  className="text-left font-medium text-muted-foreground px-4 py-3 cursor-pointer select-none hover:text-foreground transition-colors"
+                  className="text-left font-bold text-foreground px-4 py-3 cursor-pointer select-none hover:bg-accent/50 transition-colors uppercase tracking-widest text-[11px]"
                   onClick={() => toggleSort("status")}
                 >
                   <span className="inline-flex items-center gap-1.5">
                     Status <SortIcon field="status" />
                   </span>
                 </th>
-                <th className="text-left font-medium text-muted-foreground px-4 py-3">CPF</th>
-                <th className="text-left font-medium text-muted-foreground px-4 py-3">Contato</th>
-                <th className="text-left font-medium text-muted-foreground px-4 py-3">Escavador</th>
+                <th className="text-left font-bold text-foreground px-4 py-3 uppercase tracking-widest text-[11px]">CPF</th>
+                <th className="text-left font-bold text-foreground px-4 py-3 uppercase tracking-widest text-[11px]">Contato</th>
+                <th className="text-left font-bold text-foreground px-4 py-3 uppercase tracking-widest text-[11px]">Escavador</th>
               </tr>
             </thead>
             <tbody>
@@ -210,21 +210,21 @@ export default function Precatorios() {
               {precatorios?.map((item) => (
                 <React.Fragment key={item.id}>
                   <tr
-                    className="border-b border-border last:border-0 hover:bg-accent/50 transition-colors"
+                    className="border-b-2 border-border last:border-0 hover:bg-muted/30 transition-colors"
                     style={{ height: 44 }}
                   >
-                    <td className="px-4 py-2.5 font-mono text-xs text-foreground">{item.numero}</td>
-                    <td className="px-4 py-2.5 text-center text-xs text-muted-foreground">{item.ano}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm font-medium text-foreground">
+                    <td className="px-4 py-2.5 font-mono text-xs text-foreground font-medium">{item.numero}</td>
+                    <td className="px-4 py-2.5 text-center font-mono text-xs text-muted-foreground">{item.ano}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm font-bold text-foreground">
                       {formatCurrency(Number(item.valor))}
                     </td>
                     <td className="px-4 py-2.5">
                       <StatusBadge status={statusMap[item.status] || "pendente"} />
                     </td>
-                    <td className="px-4 py-2.5 text-muted-foreground text-xs font-mono">
+                    <td className="px-4 py-2.5 text-foreground text-xs font-mono font-medium">
                       {item.cpf || "—"}
                     </td>
-                    <td className="px-4 py-2.5 text-muted-foreground text-xs">
+                    <td className="px-4 py-2.5 text-foreground text-xs font-mono font-medium">
                       {item.telefones?.length || item.emails?.length ? "📞 📧" : "—"}
                     </td>
                     <td className="px-4 py-2.5">
@@ -253,8 +253,8 @@ export default function Precatorios() {
         )}
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-border px-4 py-3">
-            <p className="text-xs text-muted-foreground">
+          <div className="flex items-center justify-between border-t-2 border-border bg-muted/20 px-4 py-3">
+            <p className="text-xs font-mono text-muted-foreground">
               Mostrando {(page * PAGE_SIZE + 1).toLocaleString("pt-BR")}–{Math.min((page + 1) * PAGE_SIZE, totalCount).toLocaleString("pt-BR")} de {totalCount.toLocaleString("pt-BR")}
             </p>
             <div className="flex items-center gap-1">

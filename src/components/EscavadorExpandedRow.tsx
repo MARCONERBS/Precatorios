@@ -66,9 +66,9 @@ export function EscavadorCell({ item, isExpanded, onToggle }: EscavadorProps) {
 
 function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
   return (
-    <div className="flex items-start gap-2.5 p-3 rounded-lg bg-background border border-border/60">
-      <div className="mt-0.5 flex-shrink-0 h-7 w-7 rounded-md bg-primary/10 flex items-center justify-center">
-        <Icon className="h-3.5 w-3.5 text-primary" />
+    <div className="flex items-start gap-2.5 p-3 rounded-none bg-background border-2 border-border shadow-[2px_2px_0_0_rgba(17,17,17,1)]">
+      <div className="mt-0.5 flex-shrink-0 h-7 w-7 rounded-none border-2 border-primary bg-primary/10 flex items-center justify-center">
+        <Icon className="h-4 w-4 text-primary" strokeWidth={2.5} />
       </div>
       <div className="min-w-0">
         <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{label}</p>
@@ -154,7 +154,7 @@ export function EscavadorExpandedContent({ item }: { item: { escavador_dados: an
               {cleanPartes.map((p: string, i: number) => (
                 <span
                   key={i}
-                  className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-primary/8 text-primary border border-primary/15"
+                  className="inline-flex items-center px-3 py-1.5 rounded-none text-[10px] font-bold uppercase tracking-widest bg-primary/10 text-primary border-2 border-border shadow-[2px_2px_0_0_rgba(17,17,17,1)]"
                 >
                   {p}
                 </span>
@@ -165,9 +165,9 @@ export function EscavadorExpandedContent({ item }: { item: { escavador_dados: an
 
         {/* Resumo */}
         {cleanResumo && (
-          <div className="rounded-lg bg-background border border-border/60 p-4">
-            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Resumo</p>
-            <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line max-w-3xl">
+          <div className="rounded-none bg-background border-2 border-border shadow-card p-4">
+            <p className="text-[11px] font-bold text-foreground uppercase tracking-widest mb-2 border-b-2 border-border pb-1">Resumo</p>
+            <p className="text-sm font-mono text-foreground leading-relaxed whitespace-pre-line max-w-3xl">
               {cleanResumo}
             </p>
           </div>

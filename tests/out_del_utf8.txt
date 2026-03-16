@@ -1,0 +1,9 @@
+﻿Trying DELETE with /instance/delete (body)
+405 {"code":405,"message":"Method Not Allowed.","data":{}}
+
+Trying POST with /instance/delete
+405 {"code":405,"message":"Method Not Allowed.","data":{}}
+
+Trying DELETE with /instance/logout/Name
+405 {"code":405,"message":"Method Not Allowed.","data":{}}
+

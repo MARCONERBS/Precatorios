@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Precatorios from "./pages/Precatorios";
 import KanbanPage from "./pages/KanbanPage";
 import ChatPage from "./pages/ChatPage";
+import ConnectionPage from "./pages/ConnectionPage";
 import Configuracoes from "./pages/Configuracoes";
 import NotFound from "./pages/NotFound";
 
@@ -33,7 +34,8 @@ const App = () => (
             <Route path="/" element={<Dashboard />} />
             <Route path="/precatorios" element={<Precatorios />} />
             <Route path="/kanban" element={<KanbanPage />} />
-            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/evachat/conectar" element={<ConnectionPage />} />
+            <Route path="/evachat/chat" element={<ChatPage />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
           </Route>
           <Route path="*" element={<NotFound />} />
