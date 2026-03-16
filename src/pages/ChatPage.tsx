@@ -1,8 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { cn } from "@/lib/utils";
-import { Send, Plus, MessageSquare } from "lucide-react";
+import { Send, Plus, MessageSquare, Trash2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { evaApi } from "@/lib/evaapi";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,6 +44,7 @@ export default function ChatPage() {
   const [newChatNumber, setNewChatNumber] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos");
   const [isSseConnected, setIsSseConnected] = useState(false);
+  const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -163,12 +169,9 @@ export default function ChatPage() {
         const isFromMe = !!msg.fromMe;
         const senderName = (msg.senderName || data.chat?.name || waId) as string;
 
-        // FIX: detect if timestamp is already in ms (> year 2001 in seconds = 1e12 ms threshold)
         const rawTs = msg.messageTimestamp;
         const tsMs = rawTs
-          ? rawTs > 1_000_000_000_000
-            ? rawTs          // already milliseconds
-            : rawTs * 1000   // seconds → convert to ms
+          ? rawTs > 1_000_000_000_000 ? rawTs : rawTs * 1000
           : Date.now();
 
         const msgId = (msg.messageid || msg.id || `sse-${tsMs}-${waId}`).toString();
@@ -283,6 +286,26 @@ export default function ChatPage() {
     }
   };
 
+  // ─── Delete handlers ──────────────────────────────────────────────────────
+  const handleDeleteContact = (contact: Contact, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setContactToDelete(contact);
+  };
+
+  const confirmDeleteContact = async () => {
+    const contact = contactToDelete;
+    setContactToDelete(null);
+    if (!contact) return;
+    if (contact.dbId) {
+      await supabase.from("evachat_messages").delete().eq("contact_id", contact.dbId);
+      await supabase.from("evachat_contacts").delete().eq("id", contact.dbId);
+    }
+    setContacts((prev) => prev.filter((c) => c.id !== contact.id));
+    setMessagesByContact((prev) => { const next = { ...prev }; delete next[contact.id]; return next; });
+    if (selectedContactId === contact.id) setSelectedContactId(null);
+    toast.success("Conversa excluída com sucesso.");
+  };
+
   const currentMessages = selectedContactId ? messagesByContact[selectedContactId] || [] : [];
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [currentMessages.length]);
 
@@ -297,120 +320,193 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="h-[calc(100vh-5rem)] flex flex-col bg-background p-6 overflow-hidden">
-      <div className="mb-4 flex-shrink-0">
-        <h1 className="text-3xl font-black uppercase tracking-tighter">EvaChat Live</h1>
-        <p className="text-xs font-bold flex items-center gap-2 mt-1 uppercase">
-          <span className={cn("w-2 h-2 rounded-full", isSseConnected ? "bg-green-500 animate-pulse" : "bg-red-500")} />
-          {isSseConnected ? "Recebendo em tempo real" : "Reconectando..."}
-        </p>
-      </div>
-
-      <div className="flex-1 flex gap-6 min-h-0 overflow-hidden">
-        <div className="w-80 bg-card border-4 border-border flex flex-col shadow-[4px_4px_0_0_rgba(17,17,17,1)] overflow-hidden flex-shrink-0">
-          <div className="p-4 border-b-4 border-border bg-muted/30 flex-shrink-0">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-bold uppercase tracking-widest text-sm">Conversas</h2>
-              <Button onClick={() => setIsCreatingChat(!isCreatingChat)} variant="outline" size="icon"
-                className="h-8 w-8 rounded-none border-2 shadow-[2px_2px_0_0_rgba(17,17,17,1)] active:shadow-none transition-none">
-                <Plus className="w-4 h-4" />
-              </Button>
-            </div>
-            {isCreatingChat && (
-              <form onSubmit={handleStartChat} className="flex gap-2 mb-3">
-                <Input value={newChatNumber} onChange={(e) => setNewChatNumber(e.target.value)} placeholder="DDD + Número" className="rounded-none border-2 h-9 text-xs" />
-                <Button type="submit" size="sm" className="rounded-none h-9 px-3">OK</Button>
-              </form>
-            )}
-            <div className="flex border-2 border-border overflow-hidden">
-              {(["todos", "pendente", "aberto"] as StatusFilter[]).map((f) => (
-                <button key={f} onClick={() => setStatusFilter(f)}
-                  className={cn("flex-1 py-1.5 text-[10px] font-black uppercase tracking-tighter border-r-2 last:border-r-0",
-                    statusFilter === f ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted")}>
-                  {f === "todos" ? "Todos" : f === "pendente" ? "Pendentes" : "Abertos"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
-            {contacts.filter((c) => statusFilter === "todos" || c.status === statusFilter).map((contact) => (
-              <button key={contact.id} onClick={() => setSelectedContactId(contact.id)}
-                className={cn("w-full text-left p-3 border-2 flex gap-3 items-center transition-none",
-                  selectedContactId === contact.id ? "border-primary bg-primary/5 shadow-[2px_2px_0_0_rgba(11,11,11,1)]" : "border-transparent hover:border-border hover:bg-muted/50")}>
-                <div className="w-10 h-10 border-2 border-border flex-shrink-0 bg-muted flex items-center justify-center overflow-hidden">
-                  {contact.avatarUrl ? <img src={contact.avatarUrl} className="w-full h-full object-cover" /> : <span className="font-black text-xs font-mono">{contact.nome.substring(0, 2).toUpperCase()}</span>}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-sm truncate uppercase">{contact.nome}</span>
-                    <span className="text-[10px] opacity-50 ml-2 flex-shrink-0">{contact.timestamp}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-[11px] opacity-70 truncate flex-1">{contact.lastMessage}</p>
-                    <div className={cn("w-2 h-2 rounded-full flex-shrink-0", contact.status === "pendente" ? "bg-red-500" : "bg-green-500")} />
-                  </div>
-                </div>
-              </button>
-            ))}
-            {contacts.filter((c) => statusFilter === "todos" || c.status === statusFilter).length === 0 && (
-              <div className="p-8 text-center text-[10px] font-bold uppercase opacity-20">Vazio</div>
-            )}
-          </div>
+    <Fragment>
+      <div className="h-[calc(100vh-5rem)] flex flex-col bg-background p-6 overflow-hidden">
+        <div className="mb-4 flex-shrink-0">
+          <h1 className="text-3xl font-black uppercase tracking-tighter">EvaChat Live</h1>
+          <p className="text-xs font-bold flex items-center gap-2 mt-1 uppercase">
+            <span className={cn("w-2 h-2 rounded-full", isSseConnected ? "bg-green-500 animate-pulse" : "bg-red-500")} />
+            {isSseConnected ? "Recebendo em tempo real" : "Reconectando..."}
+          </p>
         </div>
 
-        <div className="flex-1 bg-card border-4 border-border flex flex-col shadow-[4px_4px_0_0_rgba(17,17,17,1)] overflow-hidden">
-          {selectedContactId ? (
-            <>
-              <div className="p-4 border-b-4 border-border bg-muted/30 flex items-center gap-3 flex-shrink-0">
-                <div className="w-10 h-10 border-2 border-primary flex-shrink-0 bg-primary/10 flex items-center justify-center overflow-hidden font-bold">
-                  {contacts.find((c) => c.id === selectedContactId)?.avatarUrl
-                    ? <img src={contacts.find((c) => c.id === selectedContactId)!.avatarUrl!} className="w-full h-full object-cover" />
-                    : contacts.find((c) => c.id === selectedContactId)?.nome?.substring(0, 2).toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="font-bold font-mono uppercase">{contacts.find((c) => c.id === selectedContactId)?.nome}</h3>
-                  <p className="text-[10px] font-black uppercase text-muted-foreground">+{selectedContactId}</p>
-                </div>
+        <div className="flex-1 flex gap-6 min-h-0 overflow-hidden">
+          {/* ── Contact sidebar ── */}
+          <div className="w-80 bg-card border-4 border-border flex flex-col shadow-[4px_4px_0_0_rgba(17,17,17,1)] overflow-hidden flex-shrink-0">
+            <div className="p-4 border-b-4 border-border bg-muted/30 flex-shrink-0">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-bold uppercase tracking-widest text-sm">Conversas</h2>
+                <Button onClick={() => setIsCreatingChat(!isCreatingChat)} variant="outline" size="icon"
+                  className="h-8 w-8 rounded-none border-2 shadow-[2px_2px_0_0_rgba(17,17,17,1)] active:shadow-none transition-none">
+                  <Plus className="w-4 h-4" />
+                </Button>
               </div>
-
-              <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[size:30px_30px] bg-[linear-gradient(to_right,#80808010_1px,transparent_1px),linear-gradient(to_bottom,#80808010_1px,transparent_1px)]">
-                {currentMessages.map((msg) => (
-                  <div key={msg.id} className={cn("flex flex-col max-w-[80%]", msg.sender === "user" ? "ml-auto items-end" : "mr-auto items-start")}>
-                    <div className={cn("p-4 border-2 font-medium text-sm shadow-[4px_4px_0_0_rgba(11,11,11,0.8)]",
-                      msg.sender === "user" ? "bg-primary text-primary-foreground border-primary rounded-l-xl rounded-tr-xl" : "bg-background text-foreground border-border rounded-r-xl rounded-tl-xl")}>
-                      {msg.text}
-                    </div>
-                    <span className="text-[10px] font-bold uppercase opacity-40 mt-1.5 px-1">{msg.time}</span>
-                  </div>
-                ))}
-                {currentMessages.length === 0 && (
-                  <div className="h-full flex items-center justify-center">
-                    <p className="text-xs uppercase font-bold tracking-[1em] opacity-10">Silêncio</p>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-
-              <div className="p-4 border-t-4 border-border bg-background flex-shrink-0">
-                <form onSubmit={handleSendMessage} className="flex gap-4">
-                  <Input value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="MENSAGEM..."
-                    className="flex-1 h-14 border-2 border-border shadow-[4px_4px_0_0_rgba(11,11,11,1)] rounded-none focus-visible:ring-0 focus-visible:border-primary font-bold px-4" />
-                  <Button type="submit" disabled={!messageText.trim()}
-                    className="h-14 px-10 border-2 shadow-[4px_4px_0_0_rgba(11,11,11,1)] font-black uppercase transition-none active:translate-x-1 active:translate-y-1 active:shadow-none">
-                    <Send className="w-5 h-5 mr-3" /> ENVIAR
-                  </Button>
+              {isCreatingChat && (
+                <form onSubmit={handleStartChat} className="flex gap-2 mb-3">
+                  <Input value={newChatNumber} onChange={(e) => setNewChatNumber(e.target.value)} placeholder="DDD + Número" className="rounded-none border-2 h-9 text-xs" />
+                  <Button type="submit" size="sm" className="rounded-none h-9 px-3">OK</Button>
                 </form>
+              )}
+              <div className="flex border-2 border-border overflow-hidden">
+                {(["todos", "pendente", "aberto"] as StatusFilter[]).map((f) => (
+                  <button key={f} onClick={() => setStatusFilter(f)}
+                    className={cn("flex-1 py-1.5 text-[10px] font-black uppercase tracking-tighter border-r-2 last:border-r-0",
+                      statusFilter === f ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted")}>
+                    {f === "todos" ? "Todos" : f === "pendente" ? "Pendentes" : "Abertos"}
+                  </button>
+                ))}
               </div>
-            </>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center opacity-10">
-              <MessageSquare className="w-20 h-20 mb-4" strokeWidth={0.75} />
-              <p className="font-black uppercase tracking-[0.5em] text-sm">Selecione uma conversa</p>
             </div>
-          )}
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+              {contacts.filter((c) => statusFilter === "todos" || c.status === statusFilter).map((contact) => (
+                /* ── Contact card with slide-reveal delete button ── */
+                <div key={contact.id} className="group relative overflow-hidden">
+                  {/* Main card — slides left on hover to reveal delete */}
+                  <button
+                    onClick={() => setSelectedContactId(contact.id)}
+                    className={cn(
+                      "w-full text-left p-3 border-2 flex gap-3 items-center",
+                      "transition-transform duration-200 ease-out",
+                      "group-hover:-translate-x-10",
+                      selectedContactId === contact.id
+                        ? "border-primary bg-primary/5 shadow-[2px_2px_0_0_rgba(11,11,11,1)]"
+                        : "border-transparent hover:border-border hover:bg-muted/50"
+                    )}>
+                    <div className="w-10 h-10 border-2 border-border flex-shrink-0 bg-muted flex items-center justify-center overflow-hidden">
+                      {contact.avatarUrl
+                        ? <img src={contact.avatarUrl} className="w-full h-full object-cover" />
+                        : <span className="font-black text-xs font-mono">{contact.nome.substring(0, 2).toUpperCase()}</span>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-sm truncate uppercase">{contact.nome}</span>
+                        <span className="text-[10px] opacity-50 ml-2 flex-shrink-0">{contact.timestamp}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[11px] opacity-70 truncate flex-1">{contact.lastMessage}</p>
+                        <div className={cn("w-2 h-2 rounded-full flex-shrink-0", contact.status === "pendente" ? "bg-red-500" : "bg-green-500")} />
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Slide-in delete button — revealed when card slides left */}
+                  <button
+                    onClick={(e) => handleDeleteContact(contact, e)}
+                    title="Excluir conversa"
+                    className={cn(
+                      "absolute right-0 top-0 h-full w-10",
+                      "flex flex-col items-center justify-center gap-0.5",
+                      "bg-red-600 text-white",
+                      "translate-x-10 group-hover:translate-x-0",
+                      "transition-transform duration-200 ease-out",
+                      "hover:bg-red-700 active:bg-red-800 active:scale-95"
+                    )}>
+                    <Trash2 className="w-4 h-4" />
+                    <span className="text-[7px] font-black uppercase tracking-widest leading-none">del</span>
+                  </button>
+                </div>
+              ))}
+              {contacts.filter((c) => statusFilter === "todos" || c.status === statusFilter).length === 0 && (
+                <div className="p-8 text-center text-[10px] font-bold uppercase opacity-20">Vazio</div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Chat area ── */}
+          <div className="flex-1 bg-card border-4 border-border flex flex-col shadow-[4px_4px_0_0_rgba(17,17,17,1)] overflow-hidden">
+            {selectedContactId ? (
+              <>
+                <div className="p-4 border-b-4 border-border bg-muted/30 flex items-center gap-3 flex-shrink-0">
+                  <div className="w-10 h-10 border-2 border-primary flex-shrink-0 bg-primary/10 flex items-center justify-center overflow-hidden font-bold">
+                    {contacts.find((c) => c.id === selectedContactId)?.avatarUrl
+                      ? <img src={contacts.find((c) => c.id === selectedContactId)!.avatarUrl!} className="w-full h-full object-cover" />
+                      : contacts.find((c) => c.id === selectedContactId)?.nome?.substring(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="font-bold font-mono uppercase">{contacts.find((c) => c.id === selectedContactId)?.nome}</h3>
+                    <p className="text-[10px] font-black uppercase text-muted-foreground">+{selectedContactId}</p>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[size:30px_30px] bg-[linear-gradient(to_right,#80808010_1px,transparent_1px),linear-gradient(to_bottom,#80808010_1px,transparent_1px)]">
+                  {currentMessages.map((msg) => (
+                    <div key={msg.id} className={cn("flex flex-col max-w-[80%]", msg.sender === "user" ? "ml-auto items-end" : "mr-auto items-start")}>
+                      <div className={cn("p-4 border-2 font-medium text-sm shadow-[4px_4px_0_0_rgba(11,11,11,0.8)]",
+                        msg.sender === "user" ? "bg-primary text-primary-foreground border-primary rounded-l-xl rounded-tr-xl" : "bg-background text-foreground border-border rounded-r-xl rounded-tl-xl")}>
+                        {msg.text}
+                      </div>
+                      <span className="text-[10px] font-bold uppercase opacity-40 mt-1.5 px-1">{msg.time}</span>
+                    </div>
+                  ))}
+                  {currentMessages.length === 0 && (
+                    <div className="h-full flex items-center justify-center">
+                      <p className="text-xs uppercase font-bold tracking-[1em] opacity-10">Silêncio</p>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                <div className="p-4 border-t-4 border-border bg-background flex-shrink-0">
+                  <form onSubmit={handleSendMessage} className="flex gap-4">
+                    <Input value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="MENSAGEM..."
+                      className="flex-1 h-14 border-2 border-border shadow-[4px_4px_0_0_rgba(11,11,11,1)] rounded-none focus-visible:ring-0 focus-visible:border-primary font-bold px-4" />
+                    <Button type="submit" disabled={!messageText.trim()}
+                      className="h-14 px-10 border-2 shadow-[4px_4px_0_0_rgba(11,11,11,1)] font-black uppercase transition-none active:translate-x-1 active:translate-y-1 active:shadow-none">
+                      <Send className="w-5 h-5 mr-3" /> ENVIAR
+                    </Button>
+                  </form>
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center opacity-10">
+                <MessageSquare className="w-20 h-20 mb-4" strokeWidth={0.75} />
+                <p className="font-black uppercase tracking-[0.5em] text-sm">Selecione uma conversa</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* ══ Premium Delete Confirmation Dialog ══ */}
+      <AlertDialog open={!!contactToDelete} onOpenChange={(open) => { if (!open) setContactToDelete(null); }}>
+        <AlertDialogContent className="max-w-sm rounded-none border-4 border-border shadow-[8px_8px_0_0_hsl(var(--foreground))] p-0 overflow-hidden gap-0">
+          {/* Bold red header stripe */}
+          <div className="bg-red-600 px-6 py-5 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-sm bg-white/20 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5 text-white" strokeWidth={2.5} />
+            </div>
+            <AlertDialogTitle className="text-white font-black uppercase tracking-tight text-lg leading-tight m-0">
+              Excluir conversa?
+            </AlertDialogTitle>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 py-5">
+            <AlertDialogHeader className="space-y-0">
+              <AlertDialogDescription className="text-sm text-foreground/80 leading-relaxed">
+                Você está prestes a excluir a conversa com{" "}
+                <span className="font-black text-foreground">{contactToDelete?.nome}</span>.
+                <br /><br />
+                <span className="font-bold text-red-600">Todas as mensagens serão apagadas</span>{" "}
+                e esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+          </div>
+
+          <AlertDialogFooter className="px-6 pb-6 gap-3 flex-row">
+            <AlertDialogCancel className="flex-1 rounded-none border-2 border-border font-bold uppercase tracking-widest h-11 shadow-[3px_3px_0_0_rgba(0,0,0,0.15)] hover:shadow-none hover:translate-x-px hover:translate-y-px transition-all">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteContact}
+              className="flex-1 rounded-none border-2 border-red-700 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest h-11 shadow-[3px_3px_0_0_rgba(153,27,27,0.6)] hover:shadow-none hover:translate-x-px hover:translate-y-px transition-all gap-2">
+              <Trash2 className="w-4 h-4" />
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Fragment>
   );
 }

@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { QrCode, Smartphone, Loader2, Plus, LogOut, CheckCircle2, Trash2, Link as LinkIcon, RefreshCw, Server } from "lucide-react";
+import { QrCode, Smartphone, Loader2, Plus, LogOut, CheckCircle2, Trash2, Link as LinkIcon, RefreshCw, Server, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { evaApi } from "@/lib/evaapi";
 import { supabase } from "@/integrations/supabase/client";
+import { useNavigate } from "react-router-dom";
 
 export default function ConnectionPage() {
+  const navigate = useNavigate();
   const [instanceName, setInstanceName] = useState("");
   const [token, setToken] = useState<string | null>(null);
   
@@ -54,16 +56,14 @@ export default function ConnectionPage() {
 
       if (error) throw error;
       
-      // Data in supbase has name and token, we map it to match UI expectations
       const mappedInstances = data?.map(i => ({
          name: i.name,
          token: i.token,
-         status: "Verificando..." // Initial generic status until clicked
+         status: "Verificando..." 
       })) || [];
       
       setInstances(mappedInstances);
 
-      // Async fetch actual live status from UazaPi for each instance
       mappedInstances.forEach(async (inst) => {
          try {
             const st = await evaApi.getStatus(inst.token);
@@ -78,7 +78,7 @@ export default function ConnectionPage() {
       });
       
     } catch (err) {
-      toast.error("Erro ao buscar instâncias existentes no banco de dados.");
+      toast.error("Erro ao buscar instâncias existentes.");
     } finally {
       setIsLoadingInstances(false);
     }
@@ -95,7 +95,6 @@ export default function ConnectionPage() {
 
   const startQrRefresh = (currentToken: string) => {
     stopQrRefresh();
-    // Refresh QR code every 25 seconds if still connecting
     qrRefreshInterval.current = setInterval(() => {
       refreshQrCode(currentToken);
     }, 25000);
@@ -136,15 +135,12 @@ export default function ConnectionPage() {
     setIsCreating(true);
     try {
       const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) {
-         throw new Error("Usuário não autenticado");
-      }
+      if (!userData.user) throw new Error("Usuário não autenticado");
 
       const data = await evaApi.createInstance(instanceName);
       if (data?.instance?.token) {
         const newToken = data.instance.token;
 
-        // Save to Supabase DB so the user owns this instance
         const { error: dbError } = await supabase.from('evachat_instances').insert({
            name: instanceName,
            token: newToken,
@@ -179,11 +175,10 @@ export default function ConnectionPage() {
   };
 
   const handleDeleteInstance = async (name: string, instanceToken: string) => {
-    if (!confirm(`Deseja realmente apagar e desconectar a instância ${name}?`)) return;
+    if (!confirm(`Deseja realmente apagar a instância ${name}?`)) return;
     
     setDeletingId(instanceToken);
     try {
-      // 1. Apagar do Supabase
       const { error: dbError } = await supabase
          .from('evachat_instances')
          .delete()
@@ -191,12 +186,10 @@ export default function ConnectionPage() {
          
       if (dbError) throw dbError;
 
-      // 2. Apagar da UazaPI
       await evaApi.deleteInstance(name);
       toast.success("Instância removida com sucesso.");
       
       loadInstances();
-      // Se for a mesma que estou usando, desloga localmente
       if (token === instanceToken) {
         handleDisconnectLocally();
       }
@@ -215,7 +208,6 @@ export default function ConnectionPage() {
       if (data?.instance?.qrcode) {
         setQrCode(data.instance.qrcode);
         setStatus("connecting");
-        // Reinicia o poll caso tenha parado
         startStatusPolling(currentToken);
       } else if (data?.instance?.status === "connected") {
         setStatus("connected");
@@ -223,7 +215,7 @@ export default function ConnectionPage() {
         stopPolling();
       }
     } catch (err) {
-      console.error("Falha ao atualizar QR Code invisivelmente", err);
+      console.error("Falha ao atualizar QR Code", err);
     } finally {
       setIsRefreshingQr(false);
     }
@@ -257,91 +249,98 @@ export default function ConnectionPage() {
     stopPolling();
     stopQrRefresh();
     loadInstances();
-    toast.info("Aba desvinculada. Escolha uma instância.");
+    toast.info("Aba desvinculada.");
   };
 
   return (
-    <div className="h-full flex flex-col bg-background p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-black uppercase tracking-tighter text-foreground mb-2">
+    <div className="min-h-full flex flex-col bg-background p-6 space-y-8 max-w-7xl mx-auto">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-black uppercase tracking-tight text-foreground underline decoration-orange-500 decoration-4 underline-offset-4 mb-4">
           Conexão EvaChat
         </h1>
-        <p className="text-muted-foreground font-medium max-w-2xl">
-          Gerencie suas instâncias do WhatsApp. Crie conexões novas, vincule sessões existentes ou remova as antigas. O QR Code atualiza automaticamente para não expirar!
+        <p className="text-muted-foreground text-sm font-medium max-w-2xl">
+          Gerencie suas instâncias do WhatsApp. O Sistema Mogui utiliza tecnologia de ponta para manter suas conexões estáveis e seguras.
         </p>
       </div>
 
-      <div className="flex-1 flex items-start justify-center pt-8">
-        <div className="w-full max-w-xl bg-card border-4 border-border p-8 shadow-[8px_8px_0_0_rgba(17,17,17,1)] transition-all">
-          
-          {/* STATE 1: NO TOKEN BOUND */}
-          {!token && (
-            <div className="space-y-6">
-              <div className="flex border-b-4 border-border mb-6">
-                <button
-                  onClick={() => setActiveTab("new")}
-                  className={cn(
-                    "flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-all",
-                    activeTab === "new" 
-                      ? "bg-primary text-primary-foreground border-b-4 border-primary -mb-1"
-                      : "text-muted-foreground hover:bg-muted/50"
-                  )}
-                >
-                  Criar Nova
-                </button>
-                <button
-                  onClick={() => { setActiveTab("existing"); loadInstances(); }}
-                  className={cn(
-                    "flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-all",
-                    activeTab === "existing" 
-                      ? "bg-primary text-primary-foreground border-b-4 border-primary -mb-1"
-                      : "text-muted-foreground hover:bg-muted/50"
-                  )}
-                >
-                  Existentes
-                </button>
-              </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Left Column: Actions & Tabs */}
+        <div className="lg:col-span-5 space-y-6">
+          <div className="bg-card border-4 border-border shadow-[6px_6px_0_0_rgba(17,17,17,1)] overflow-hidden">
+            <div className="flex border-b-4 border-border">
+              <button
+                onClick={() => setActiveTab("new")}
+                className={cn(
+                  "flex-1 py-4 text-xs font-black uppercase tracking-widest transition-all",
+                  activeTab === "new" 
+                    ? "bg-primary text-white"
+                    : "bg-background text-muted-foreground hover:bg-muted/30"
+                )}
+              >
+                Nova Instância
+              </button>
+              <button
+                onClick={() => { setActiveTab("existing"); loadInstances(); }}
+                className={cn(
+                  "flex-1 py-4 text-xs font-black uppercase tracking-widest transition-all",
+                  activeTab === "existing" 
+                    ? "bg-primary text-white"
+                    : "bg-background text-muted-foreground hover:bg-muted/30"
+                )}
+              >
+                Minhas Sessões
+              </button>
+            </div>
 
-              {activeTab === "new" && (
-                <div className="flex flex-col items-center text-center space-y-6 animate-in fade-in zoom-in-95">
-                  <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-2">
-                    <Plus className="w-8 h-8 text-primary" strokeWidth={3} />
+            <div className="p-6">
+              {activeTab === "new" ? (
+                <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
+                  <div className="flex items-center gap-3 mb-2">
+                    <Plus className="w-5 h-5 text-orange-500" strokeWidth={3} />
+                    <h2 className="text-sm font-black uppercase tracking-widest">Criar Nova Conexão</h2>
                   </div>
-                  <h2 className="text-2xl font-black uppercase tracking-tight">Criar Instância</h2>
-                  <p className="text-sm text-muted-foreground font-medium px-8">
-                    Dê um nome para a sua nova conexão. Será gerado um container dedicado no servidor para acoplar seu WhatsApp.
+                  <p className="text-xs text-muted-foreground font-medium leading-relaxed">
+                    Dê um nome único para sua instância. Após a criação, você poderá vincular seu WhatsApp lendo o QR Code.
                   </p>
                   
-                  <form onSubmit={handleCreateInstance} className="w-full space-y-4">
+                  <form onSubmit={handleCreateInstance} className="space-y-4">
                     <Input
-                      placeholder="Ex: Pessoal, Setor A..."
+                      placeholder="Ex: Comercial, Suporte..."
                       value={instanceName}
                       onChange={(e) => setInstanceName(e.target.value)}
-                      className="h-14 border-2 border-border shadow-[4px_4px_0_0_rgba(17,17,17,1)] focus-visible:ring-0 focus-visible:border-primary font-bold tracking-wider placeholder:text-muted-foreground/50 transition-all rounded-none text-center text-lg"
+                      className="h-12 border-2 border-border shadow-[4px_4px_0_0_rgba(17,17,17,1)] focus-visible:ring-0 focus-visible:border-primary font-bold tracking-wider placeholder:text-muted-foreground/30 transition-all rounded-none"
                       disabled={isCreating}
                     />
                     <Button 
                       type="submit" 
-                      className="w-full h-14 border-2 border-transparent hover:border-border rounded-none shadow-[4px_4px_0_0_rgba(17,17,17,1)] transition-all hover:-translate-y-1 hover:shadow-[6px_6px_0_0_rgba(17,17,17,1)] font-black tracking-widest uppercase text-lg"
+                      className="w-full h-12 border-2 border-transparent hover:border-border rounded-none shadow-[4px_4px_0_0_rgba(17,17,17,1)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none font-black tracking-widest uppercase"
                       disabled={isCreating || !instanceName.trim()}
                     >
                       {isCreating ? (
-                        <Loader2 className="w-6 h-6 animate-spin" />
+                        <Loader2 className="w-5 h-5 animate-spin" />
                       ) : (
-                        "CRIAR E VINCULAR"
+                        <>INICIAR INSTÂNCIA <ArrowRight className="ml-2 w-4 h-4" /></>
                       )}
                     </Button>
                   </form>
                 </div>
-              )}
-
-              {activeTab === "existing" && (
-                <div className="space-y-4 animate-in fade-in zoom-in-95">
+              ) : (
+                <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
                   <div className="flex justify-between items-center mb-4">
-                     <h2 className="text-xl font-black uppercase tracking-tight">Suas Instâncias</h2>
-                     <Button variant="outline" size="sm" onClick={loadInstances} disabled={isLoadingInstances} className="border-2 rounded-none font-bold uppercase tracking-widest text-xs h-8">
+                     <div className="flex items-center gap-3">
+                        <Server className="w-5 h-5 text-blue-500" strokeWidth={3} />
+                        <h2 className="text-sm font-black uppercase tracking-widest">Instâncias Ativas</h2>
+                     </div>
+                     <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={loadInstances} 
+                        disabled={isLoadingInstances} 
+                        className="text-[10px] font-black uppercase"
+                      >
                         <RefreshCw className={cn("w-3 h-3 mr-2", isLoadingInstances && "animate-spin")} />
-                        Atualizar
+                        RECARREGAR
                      </Button>
                   </div>
                   
@@ -350,34 +349,39 @@ export default function ConnectionPage() {
                       <Loader2 className="w-8 h-8 animate-spin text-primary" />
                     </div>
                   ) : instances.length === 0 ? (
-                    <div className="text-center p-8 border-4 border-dashed border-border bg-muted/20">
-                      <Server className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-                      <p className="font-bold uppercase tracking-widest text-muted-foreground text-sm">Nenhuma instância encontrada</p>
+                    <div className="text-center p-8 border-4 border-dashed border-border bg-muted/10">
+                      <p className="font-black uppercase tracking-widest text-muted-foreground text-[10px]">Vazio</p>
                     </div>
                   ) : (
-                    <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                      {instances.map((inst) => (
-                        <div key={inst.token} className="flex items-center justify-between p-4 border-2 border-border bg-card hover:bg-muted/30 transition-colors shadow-[2px_2px_0_0_rgba(17,17,17,1)]">
-                          <div>
-                            <p className="font-black uppercase tracking-widest text-foreground">{inst.name}</p>
-                            <p className="text-xs font-bold font-mono text-muted-foreground mt-1">Status: {inst.status || "desconhecido"}</p>
+                    <div className="space-y-3 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">
+                       {instances.map((inst) => (
+                        <div key={inst.token} className="group flex flex-col p-4 border-2 border-border bg-background hover:bg-muted/20 transition-all shadow-[3px_3px_0_0_rgba(17,17,17,1)]">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-black uppercase tracking-wider text-xs">{inst.name}</span>
+                            <div className="flex items-center gap-1.5">
+                              <div className={cn(
+                                "h-2 w-2 rounded-full",
+                                inst.status === "connected" ? "bg-green-500 animate-pulse" : "bg-red-500"
+                              )} />
+                              <span className="text-[9px] font-black uppercase text-muted-foreground">{inst.status}</span>
+                            </div>
                           </div>
                           <div className="flex gap-2">
                              <Button 
-                               onClick={() => handleDeleteInstance(inst.name, inst.token)}
-                               variant="ghost" 
-                               size="icon" 
-                               disabled={deletingId === inst.token}
-                               className="text-destructive hover:bg-destructive hover:text-white rounded-none border-2 border-transparent transition-colors"
+                                onClick={() => handleExistingSelect(inst.token)}
+                                className="flex-1 rounded-none font-black uppercase tracking-widest text-[10px] h-9 border-2 border-transparent hover:border-black transition-all"
                              >
-                               {deletingId === inst.token ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                <LinkIcon className="w-3 h-3 mr-2" />
+                                VINCULAR ABA
                              </Button>
                              <Button 
-                               onClick={() => handleExistingSelect(inst.token)}
-                               className="rounded-none font-bold uppercase tracking-widest text-xs h-10 border-2 border-transparent hover:border-primary hover:bg-primary/10 hover:text-primary transition-all shadow-[2px_2px_0_0_rgba(17,17,17,1)]"
+                                onClick={() => handleDeleteInstance(inst.name, inst.token)}
+                                variant="destructive" 
+                                size="icon" 
+                                disabled={deletingId === inst.token}
+                                className="rounded-none border-2 border-transparent h-9 w-9"
                              >
-                               <LinkIcon className="w-4 h-4 mr-2" />
-                               Vincular
+                                {deletingId === inst.token ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
                              </Button>
                           </div>
                         </div>
@@ -387,97 +391,111 @@ export default function ConnectionPage() {
                 </div>
               )}
             </div>
-          )}
+          </div>
+        </div>
 
-          {/* STATE 2: TOKEN BOUND, SHOWING QR OR CONNECT STATUS */}
-          {token && status !== "connected" && (
-            <div className="flex flex-col items-center text-center space-y-6">
-              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-2">
-                <QrCode className="w-8 h-8 text-primary" strokeWidth={2} />
-              </div>
-              
-              <h2 className="text-2xl font-black uppercase tracking-tight">
-                {qrCode ? "Leia o QR Code" : "Vincular WhatsApp"}
-              </h2>
-              
-              <p className="text-sm text-muted-foreground font-medium px-4">
-                {qrCode 
-                  ? "Abra o WhatsApp no seu celular, vá em Aparelhos Conectados e aponte a câmera para o código abaixo. O código atualiza automaticamente."
-                  : "A instância está vinculada a esta aba. Solicite o QR Code para parear o seu aparelho."}
-              </p>
-
-              {qrCode ? (
-                <div className="relative">
-                  <div className={cn(
-                    "bg-white p-4 border-4 border-border shadow-[4px_4px_0_0_rgba(255,255,255,1)] transition-opacity duration-300",
-                    isRefreshingQr ? "opacity-50 grayscale" : "opacity-100"
-                  )}>
-                    <img src={qrCode} alt="WhatsApp QR Code" className="w-64 h-64 object-contain" />
-                  </div>
-                  {isRefreshingQr && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                       <div className="bg-primary text-primary-foreground px-4 py-2 font-bold uppercase tracking-widest text-xs border-2 shadow-[2px_2px_0_0_rgba(17,17,17,1)] shadow-black">
-                         Atualizando QR...
-                       </div>
-                    </div>
-                  )}
+        {/* Right Column: Connection Display */}
+        <div className="lg:col-span-7">
+          <div className="bg-card border-4 border-border p-8 shadow-[8px_8px_0_0_rgba(17,17,17,1)] min-h-[500px] flex items-center justify-center relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 -mr-16 -mt-16 rounded-full" />
+            
+            {!token ? (
+              <div className="text-center space-y-6 max-w-sm">
+                <div className="w-20 h-20 bg-muted/20 rounded-none border-4 border-border border-dashed flex items-center justify-center mx-auto mb-4">
+                  <Smartphone className="w-10 h-10 text-muted-foreground/30" />
                 </div>
-              ) : (
-                <Button 
-                  onClick={() => handleConnect(token)}
-                  className="w-full h-14 bg-primary text-primary-foreground border-2 border-transparent hover:border-border rounded-none shadow-[4px_4px_0_0_rgba(17,17,17,1)] transition-all hover:-translate-y-1 hover:shadow-[6px_6px_0_0_rgba(17,17,17,1)] font-black tracking-widest uppercase text-lg"
-                  disabled={isConnecting}
-                >
-                  {isConnecting ? (
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                  ) : (
-                    "GERAR QR CODE"
-                  )}
-                </Button>
-              )}
-
-              <Button 
-                variant="ghost" 
-                onClick={handleDisconnectLocally}
-                className="text-xs uppercase font-bold tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted/50 border-2 border-transparent hover:border-border rounded-none"
-              >
-                Voltar à Lista de Instâncias
-              </Button>
-            </div>
-          )}
-
-          {/* STATE 3: CONNECTED */}
-          {token && status === "connected" && (
-            <div className="flex flex-col items-center text-center space-y-6 py-6">
-              <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mb-2 border-4 border-green-500 shadow-[4px_4px_0_0_rgba(34,197,94,1)]">
-                <CheckCircle2 className="w-10 h-10 text-green-500" strokeWidth={3} />
-              </div>
-              
-              <div>
-                <h2 className="text-3xl font-black uppercase tracking-tight text-foreground mb-2">
-                  Conectado!
-                </h2>
-                <p className="text-sm text-muted-foreground font-bold uppercase tracking-widest">
-                  Instância Ativa e Pareada com Sucesso
+                <h3 className="text-xl font-black uppercase tracking-widest">Seleção Pendente</h3>
+                <p className="text-xs text-muted-foreground font-medium uppercase leading-relaxed">
+                  Selecione uma sessão existente ou crie uma nova para visualizar o status aqui.
                 </p>
               </div>
+            ) : status === "connected" ? (
+              <div className="text-center space-y-8 py-10 animate-in zoom-in-95 duration-500">
+                <div className="w-24 h-24 bg-green-500 text-white rounded-none border-4 border-black shadow-[6px_6px_0_0_rgba(17,17,17,1)] flex items-center justify-center mx-auto relative">
+                  <CheckCircle2 className="w-12 h-12" strokeWidth={3} />
+                  <div className="absolute -top-2 -right-2 bg-black text-white px-2 py-0.5 text-[8px] font-black uppercase">Online</div>
+                </div>
+                
+                <div>
+                  <h2 className="text-4xl font-black uppercase tracking-tighter text-foreground mb-4">
+                    WhatsApp <span className="text-green-500">Ativo</span>
+                  </h2>
+                  <p className="text-xs text-muted-foreground font-black uppercase tracking-widest max-w-[300px] mx-auto leading-loose">
+                    Instância operando normalmente. Pronto para comunicações.
+                  </p>
+                </div>
 
-              <div className="w-full pt-8 space-y-4 border-t-2 border-border mt-4">
-                <p className="text-sm font-medium text-muted-foreground px-4 pb-2">
-                  Você já pode acessar o menu <b>Chat</b> para conversar. Para gerenciar outra instância, desvincule esta aba primeiro.
-                </p>
-                <Button 
-                  variant="outline"
-                  onClick={handleDisconnectLocally}
-                  className="w-full h-12 border-2 border-destructive text-destructive hover:bg-destructive hover:text-white rounded-none shadow-[4px_4px_0_0_rgba(239,68,68,1)] transition-all font-bold tracking-widest uppercase"
-                >
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Desvincular e Listar Outras
-                </Button>
+                <div className="flex flex-col gap-3 pt-4">
+                  <Button 
+                    onClick={() => navigate("/evachat/chat")}
+                    className="h-14 bg-orange-500 hover:bg-orange-600 text-white border-2 border-black rounded-none shadow-[4px_4px_0_0_rgba(17,17,17,1)] transition-all font-black tracking-widest uppercase text-lg"
+                  >
+                    ABRIR CHAT MOGUI
+                  </Button>
+                  <Button 
+                    variant="ghost"
+                    onClick={handleDisconnectLocally}
+                    className="text-[10px] font-black uppercase text-muted-foreground hover:text-destructive underline underline-offset-4 decoration-2"
+                  >
+                    Desvincular Instância
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="text-center space-y-8 py-10 flex flex-col items-center">
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-black uppercase tracking-tight">
+                    {qrCode ? "CONECTAR APARELHO" : "SOLICITAR QR CODE"}
+                  </h2>
+                  <div className="h-1.5 w-24 bg-orange-500 mx-auto" />
+                </div>
+                
+                {qrCode ? (
+                  <div className="relative p-2 bg-white border-4 border-black shadow-[8px_8px_0_0_rgba(17,17,17,0.1)]">
+                    <div className={cn(
+                      "transition-all duration-500 p-2",
+                      isRefreshingQr ? "opacity-30 blur-[2px]" : "opacity-100"
+                    )}>
+                      <img src={qrCode} alt="WhatsApp QR Code" className="w-64 h-64 object-contain" />
+                    </div>
+                    {isRefreshingQr && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                         <div className="bg-black text-white px-4 py-2 font-black uppercase tracking-widest text-[9px] shadow-[4px_4px_0_0_rgba(255,107,53,1)]">
+                           Sincronizando...
+                         </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="w-64 h-64 border-4 border-border border-dashed flex flex-col items-center justify-center bg-muted/10 space-y-4">
+                    <QrCode className="w-12 h-12 text-muted-foreground/20" />
+                    <Button 
+                      onClick={() => handleConnect(token!)}
+                      variant="outline"
+                      className="border-2 rounded-none font-black uppercase tracking-widest text-[10px]"
+                      disabled={isConnecting}
+                    >
+                      {isConnecting ? "GERANDO..." : "LIMPAR E GERAR QR"}
+                    </Button>
+                  </div>
+                )}
 
+                <div className="max-w-xs space-y-4">
+                  <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider leading-relaxed">
+                    Aponte seu celular com o WhatsApp aberto para o código acima para sincronizar sua conta.
+                  </p>
+                  
+                  <Button 
+                    variant="ghost" 
+                    onClick={handleDisconnectLocally}
+                    className="text-[10px] font-black uppercase text-muted-foreground border-2 border-transparent hover:border-border rounded-none"
+                  >
+                    CANCELAR
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
