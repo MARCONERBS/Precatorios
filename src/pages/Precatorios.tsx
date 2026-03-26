@@ -22,7 +22,7 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 }
 
-type SortField = "numero" | "valor" | "ano" | "status" | "created_at";
+type SortField = "numero" | "valor" | "ano" | "status" | "natureza" | "created_at";
 type SortDir = "asc" | "desc";
 
 const PAGE_SIZE = 50;
@@ -190,10 +190,10 @@ export default function Precatorios() {
                 </th>
                 <th
                   className="text-left font-bold text-foreground px-4 py-3 cursor-pointer select-none hover:bg-accent/50 transition-colors uppercase tracking-widest text-[11px]"
-                  onClick={() => toggleSort("status")}
+                  onClick={() => toggleSort("natureza")}
                 >
                   <span className="inline-flex items-center gap-1.5">
-                    Status <SortIcon field="status" />
+                    Natureza <SortIcon field="natureza" />
                   </span>
                 </th>
                 <th className="text-left font-bold text-foreground px-4 py-3 uppercase tracking-widest text-[11px]">CPF/CNPJ</th>
@@ -208,6 +208,7 @@ export default function Precatorios() {
                     <td className="px-4 py-2.5"><div className="h-4 w-48 bg-muted rounded animate-pulse" /></td>
                     <td className="px-4 py-2.5"><div className="h-4 w-12 bg-muted rounded animate-pulse mx-auto" /></td>
                     <td className="px-4 py-2.5"><div className="h-4 w-28 bg-muted rounded animate-pulse ml-auto" /></td>
+                    <td className="px-4 py-2.5"><div className="h-4 w-20 bg-muted rounded animate-pulse" /></td>
                     <td className="px-4 py-2.5"><div className="h-4 w-20 bg-muted rounded animate-pulse" /></td>
                     <td className="px-4 py-2.5"><div className="h-4 w-24 bg-muted rounded animate-pulse" /></td>
                     <td className="px-4 py-2.5"><div className="h-4 w-12 bg-muted rounded animate-pulse" /></td>
@@ -230,10 +231,13 @@ export default function Precatorios() {
                     <td className="px-4 py-2.5">
                       <StatusBadge status={statusMap[item.status] || "pendente"} />
                     </td>
+                    <td className="px-4 py-2.5 text-foreground text-[10px] font-mono font-medium">
+                      {item.natureza || "—"}
+                    </td>
                     <td className="px-4 py-2.5 text-foreground text-[10px] font-mono font-bold">
                       {item.cpf ? (
                         item.cpf.startsWith('ADV:')
-                          ? item.cpf 
+                          ? <span className="text-amber-500/80">{item.cpf}</span>
                           : item.cpf.length === 11 
                             ? `CPF: ${item.cpf}` 
                             : item.cpf.length === 14 

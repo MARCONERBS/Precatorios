@@ -9,6 +9,8 @@ interface EscavadorProps {
   item: {
     id: string;
     numero: string;
+    natureza?: string | null;
+    natureza_id?: string | null;
     escavador_dados: any;
   };
   isExpanded: boolean;
@@ -51,6 +53,12 @@ export function EscavadorCell({ item, isExpanded, onToggle }: EscavadorProps) {
         if (escavadorDados.cpf_identificado) {
           updateData.cpf = escavadorDados.cpf_identificado;
           updateData.nome_titular = escavadorDados.nome_identificado || null;
+        }
+
+        // Include Natureza if found
+        if (escavadorDados.natureza) {
+          updateData.natureza = escavadorDados.natureza;
+          updateData.natureza_id = escavadorDados.natureza_id || null;
         }
 
         // Search in partes if not found or to supplement
@@ -154,9 +162,9 @@ function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; valu
     displayValue = value?.nome || value?.descricao || null;
   }
   
-  // Final safety: if it looks like a JSON string, hide it
-  if (typeof displayValue === 'string' && (displayValue.startsWith('{') || displayValue.startsWith('['))) {
-    displayValue = null;
+  // Final safety: if it's still an object, try to get a name or stringify
+  if (typeof displayValue === 'object') {
+    displayValue = displayValue?.nome || displayValue?.descricao || JSON.stringify(displayValue);
   }
 
   return (
@@ -172,7 +180,7 @@ function InfoCard({ icon: Icon, label, value }: { icon: any; label: string; valu
   );
 }
 
-export function EscavadorExpandedContent({ item }: { item: { escavador_dados: any } }) {
+export function EscavadorExpandedContent({ item }: { item: { natureza?: string | null; escavador_dados: any } }) {
   const dados = item.escavador_dados as any;
   if (!dados || dados.encontrado === false) {
     return (
@@ -243,6 +251,7 @@ export function EscavadorExpandedContent({ item }: { item: { escavador_dados: an
           <InfoCard icon={Building2} label="Tribunal" value={dados.tribunal} />
           <InfoCard icon={Gavel} label="Órgão Julgador" value={dados.orgao_julgador} />
           <InfoCard icon={Scale} label="Classe" value={dados.classe} />
+          <InfoCard icon={Scale} label="Natureza" value={item.natureza || dados.natureza} />
           <InfoCard icon={Calendar} label="Data" value={dados.data_publicacao} />
           <InfoCard icon={Scale} label="Assunto" value={dados.assunto} />
           {dados.area && <InfoCard icon={Scale} label="Área" value={dados.area} />}

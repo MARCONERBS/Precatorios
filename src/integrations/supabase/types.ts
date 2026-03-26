@@ -206,6 +206,27 @@ export type Database = {
           },
         ]
       }
+      naturezas: {
+        Row: {
+          created_at: string | null
+          descricao: string | null
+          id: string
+          nome: string
+        }
+        Insert: {
+          created_at?: string | null
+          descricao?: string | null
+          id?: string
+          nome: string
+        }
+        Update: {
+          created_at?: string | null
+          descricao?: string | null
+          id?: string
+          nome?: string
+        }
+        Relationships: []
+      }
       kanban_boards: {
         Row: {
           created_at: string | null
@@ -274,6 +295,8 @@ export type Database = {
           nome_titular: string | null
           numero: string
           status: string
+          natureza: string | null
+          natureza_id: string | null
           telefones: string[] | null
           updated_at: string
           user_id: string
@@ -293,6 +316,8 @@ export type Database = {
           nome_titular?: string | null
           numero: string
           status?: string
+          natureza?: string | null
+          natureza_id?: string | null
           telefones?: string[] | null
           updated_at?: string
           user_id: string
@@ -312,6 +337,8 @@ export type Database = {
           nome_titular?: string | null
           numero?: string
           status?: string
+          natureza?: string | null
+          natureza_id?: string | null
           telefones?: string[] | null
           updated_at?: string
           user_id?: string
@@ -330,6 +357,13 @@ export type Database = {
             columns: ["kanban_column_id"]
             isOneToOne: false
             referencedRelation: "kanban_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "precatorios_natureza_id_fkey"
+            columns: ["natureza_id"]
+            isOneToOne: false
+            referencedRelation: "naturezas"
             referencedColumns: ["id"]
           },
         ]
